@@ -25,6 +25,14 @@ body {
   color: var(--text);
 }
 
+.public-route-loading body {
+  visibility: hidden;
+}
+
+.public-route-loading.public-route-ready body {
+  visibility: visible;
+}
+
 button,
 input,
 select,
@@ -367,20 +375,28 @@ label {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(8, 10, 12, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(8, 10, 12, 0.12));
   color: var(--text);
   font-size: 14px;
   font-weight: 700;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 360ms ease, backdrop-filter 360ms ease;
+  transition: opacity 360ms ease, backdrop-filter 700ms ease, -webkit-backdrop-filter 700ms ease, clip-path 920ms cubic-bezier(0.18, 0.84, 0.22, 1);
+  filter: blur(0) saturate(1);
+  backdrop-filter: blur(0);
+  -webkit-backdrop-filter: blur(0);
+  clip-path: inset(0 0 100% 0);
   z-index: 8;
+}
+
+.viewer-band.transition-preload::after,
+.public-viewer.transition-preload::after {
+  opacity: 0;
 }
 
 .viewer-band.transition-fade::after,
 .public-viewer.transition-fade::after {
-  opacity: 1;
-  background: #080a0c;
+  opacity: 0;
 }
 
 .viewer-band.transition-crossfade::after,
@@ -394,6 +410,24 @@ label {
   opacity: 1;
   background: rgba(8, 10, 12, 0.28);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  clip-path: inset(0);
+}
+
+.viewer-band.quality-loading::after,
+.public-viewer.quality-loading::after {
+  opacity: 1;
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+  clip-path: inset(18% 0 0 0);
+}
+
+.viewer-band.quality-reveal::after,
+.public-viewer.quality-reveal::after {
+  opacity: 0;
+  backdrop-filter: blur(2px) saturate(1.02);
+  -webkit-backdrop-filter: blur(2px) saturate(1.02);
+  clip-path: inset(100% 0 0 0);
 }
 
 #panorama {
@@ -435,6 +469,11 @@ label {
 .transition-push #panorama {
   transform: scale(1.16) translateY(-1.5%);
   filter: saturate(1.1) contrast(1.05);
+}
+
+.transition-hold #panorama {
+  transform: scale(1.04);
+  filter: saturate(1.08) contrast(1.04);
 }
 
 .transition-zoom #panorama {
@@ -646,6 +685,18 @@ label {
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.22)) drop-shadow(0 0 8px rgba(255, 255, 255, 0.62));
 }
 
+.custom-hotspot .hotspot-thumb {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.custom-hotspot .hotspot-thumb + svg {
+  display: none;
+}
+
 .custom-hotspot:not(.type-surface_text) .hotspot-visual::before {
   content: "";
   position: absolute;
@@ -706,8 +757,12 @@ label {
 }
 
 .custom-hotspot.style-dot .hotspot-visual {
+  min-width: calc(var(--hotspot-size, 34px) * 0.52);
+  min-height: calc(var(--hotspot-size, 34px) * 0.52);
+  width: calc(var(--hotspot-size, 34px) * 0.52);
+  height: calc(var(--hotspot-size, 34px) * 0.52);
+  inset: 24%;
   border-width: 4px;
-  font-size: 0;
 }
 
 .custom-hotspot.style-label,
@@ -743,6 +798,10 @@ label {
 
 .custom-hotspot.style-square .hotspot-visual {
   border-radius: 8px;
+}
+
+.custom-hotspot.style-square .hotspot-thumb {
+  border-radius: 6px;
 }
 
 .custom-hotspot.style-glass .hotspot-visual {
@@ -810,6 +869,51 @@ label {
 .hotspot-corners i:nth-child(4) {
   left: 0;
   bottom: 0;
+}
+
+.hotspot-preview-card {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 18px);
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 170px;
+  padding: 0;
+  color: #fff;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(3px);
+  transform: translate(-50%, 12px) scale(0.96);
+  transition: opacity 300ms ease, filter 300ms ease, transform 340ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 60;
+}
+
+.hotspot-preview-kicker {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hotspot-preview-card strong {
+  max-width: 220px;
+  color: #fff;
+  font-size: clamp(16px, 1.8vw, 24px);
+  font-weight: 900;
+  line-height: 1.05;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.52);
+}
+
+.custom-hotspot:hover .hotspot-preview-card,
+.custom-hotspot:focus-within .hotspot-preview-card,
+.custom-hotspot.show-preview .hotspot-preview-card,
+.custom-hotspot.is-selected .hotspot-preview-card {
+  opacity: 1;
+  filter: blur(0);
+  transform: translate(-50%, 0) scale(1);
 }
 
 @keyframes hotspotPulse {
@@ -940,10 +1044,13 @@ label {
 }
 
 .public-shell {
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
   min-height: 100vh;
   background: #080a0c;
+  overflow: hidden;
 }
 
 .public-shell.embedded {
@@ -1026,6 +1133,7 @@ label {
 
 .public-viewer {
   position: relative;
+  overflow: hidden;
 }
 
 .public-gate {
@@ -1108,35 +1216,64 @@ label {
   }
 
   .public-bar {
-    align-items: stretch;
-    flex-direction: column;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    display: block;
+    padding: 0 12px;
+    background: transparent;
+    border: 0;
+    pointer-events: none;
+    z-index: 12;
   }
 
   .public-shell {
     height: 100dvh;
     min-height: 100dvh;
+    grid-template-rows: minmax(0, 1fr);
     overflow: hidden;
   }
 
-  .public-bar {
-    gap: 10px;
-    padding: 10px;
+  .public-bar .brand {
+    display: none;
   }
 
   .public-scenes {
+    display: flex;
+    justify-content: flex-start;
+    gap: 8px;
+    width: min(100%, 520px);
+    margin: 0 auto;
+    padding: 8px;
     overflow-x: auto;
-    overflow-y: visible;
-    padding-bottom: 6px;
+    overflow-y: hidden;
     scrollbar-width: thin;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(12, 16, 20, 0.48);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(14px) saturate(1.2);
+    pointer-events: auto;
   }
 
   .public-scenes button {
     flex: 0 0 auto;
+    min-height: 36px;
+    max-width: 170px;
+    padding: 0 13px;
+    overflow: hidden;
+    border-color: rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    text-overflow: ellipsis;
+    font-size: 12px;
   }
 
   .public-viewer {
     min-height: 0;
-    height: 100%;
+    height: 100dvh;
+    grid-row: 1;
   }
 
   .public-viewer #panorama {
@@ -1147,6 +1284,20 @@ label {
   }
 
   .public-shell.embedded .public-bar {
+    display: block;
+  }
+
+  .scene-preview {
     display: none;
   }
+
+  .hotspot-preview-card {
+    min-width: 132px;
+  }
+
+  .hotspot-preview-card strong {
+    max-width: 170px;
+    font-size: 13px;
+  }
+
 }

@@ -882,12 +882,15 @@ function renderViewer() {
 async function transitionToScene(sceneId, shouldSave = false, origin = null) {
   if (!sceneId || sceneId === activeSceneId) return;
   const surface = document.querySelector(".viewer-band") || document.querySelector(".public-viewer");
+  const targetScene = getActiveTour().scenes.find((scene) => scene.id === sceneId);
   if (origin && viewer) {
     await animateHotspotTravel(origin);
   } else {
-    surface?.classList.add("transition-fade");
+    holdCurrentScene(surface);
     await wait(180);
   }
+  await preloadSceneImage(targetScene?.image, 1200);
+  clearTransitionClasses(surface);
 
   activeSceneId = sceneId;
   activeHotspotId = null;
@@ -900,13 +903,41 @@ async function transitionToScene(sceneId, shouldSave = false, origin = null) {
     render();
   }
 
+  revealSceneQuality(surface);
+}
+
+function holdCurrentScene(surface) {
+  if (!surface) return;
+  surface.classList.add("transition-hold");
+}
+
+function revealSceneQuality(surface) {
+  if (!surface) return;
+  surface.classList.add("quality-loading");
   requestAnimationFrame(() => {
-    setTimeout(() => clearTransitionClasses(surface), 320);
+    surface.classList.add("quality-reveal");
+    setTimeout(() => {
+      surface.classList.remove("quality-loading", "quality-reveal");
+    }, 980);
   });
 }
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function preloadSceneImage(src, timeout = 700) {
+  if (!src) return Promise.resolve();
+  return Promise.race([
+    new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve();
+      image.onerror = () => resolve();
+      image.src = src;
+      image.decode?.().then(resolve).catch(resolve);
+    }),
+    wait(timeout),
+  ]);
 }
 
 async function animateHotspotTravel(hotspot) {
@@ -927,7 +958,7 @@ async function animateHotspotTravel(hotspot) {
 }
 
 function clearTransitionClasses(surface) {
-  surface?.classList.remove("transition-push", "transition-zoom", "transition-crossfade", "transition-fade", "transition-blur", "transition-none");
+  surface?.classList.remove("transition-hold", "transition-preload", "transition-push", "transition-zoom", "transition-crossfade", "transition-fade", "transition-blur", "transition-none", "quality-loading", "quality-reveal");
 }
 
 function toPannellumHotspot(hotspot) {
@@ -973,10 +1004,21 @@ function createHotspotNode(node, hotspot) {
   visual.className = "hotspot-visual";
   if (hotspot.type === "surface_text" || hotspot.style === "label") {
     visual.textContent = visualText;
+  } else if (isNavigationHotspot(hotspot) && shouldShowTargetThumbnail(hotspot)) {
+    const target = getHotspotTargetScene(hotspot);
+    visual.innerHTML = target
+      ? `<img class="hotspot-thumb" src="${escapeAttribute(target.image)}" alt="">`
+      : getHotspotIconSvg(hotspot.type);
   } else {
-    visual.innerHTML = getHotspotIconSvg(hotspot.type);
+    visual.innerHTML = getHotspotIconSvg(getStyleIconType(hotspot));
   }
   node.appendChild(visual);
+  const preview = createHotspotPreview(hotspot);
+  if (preview) {
+    node.appendChild(preview);
+    node.addEventListener("mouseenter", () => node.classList.add("show-preview"));
+    node.addEventListener("mouseleave", () => node.classList.remove("show-preview"));
+  }
   node.title = hotspot.label;
   node.addEventListener("pointerdown", (event) => {
     if (route.has("embed") || route.has("preview")) return;
@@ -1003,6 +1045,39 @@ function createHotspotNode(node, hotspot) {
   }
 }
 
+function createHotspotPreview(hotspot) {
+  if (!isNavigationHotspot(hotspot)) return null;
+  const target = getHotspotTargetScene(hotspot);
+  if (!target) return null;
+  const preview = document.createElement("span");
+  preview.className = "hotspot-preview-card";
+  preview.innerHTML = `
+    <span class="hotspot-preview-kicker">Ir a</span>
+    <strong>${escapeHtml(hotspot.label || target.title)}</strong>
+  `;
+  return preview;
+}
+
+function isNavigationHotspot(hotspot) {
+  return hotspot.type === "scene" || hotspot.type === "floor";
+}
+
+function getHotspotTargetScene(hotspot) {
+  return getActiveTour().scenes.find((scene) => scene.id === hotspot.targetSceneId);
+}
+
+function shouldShowTargetThumbnail(hotspot) {
+  return ["pin", "pulse", "beacon", "ring", "square", "glass"].includes(hotspot.style || "pin");
+}
+
+function getStyleIconType(hotspot) {
+  if (!isNavigationHotspot(hotspot)) return hotspot.type;
+  if (hotspot.style === "dot") return "dot";
+  if (hotspot.style === "chevron") return "chevron";
+  if (hotspot.style === "arrow") return "scene";
+  return hotspot.type;
+}
+
 function getHotspotDisplayText(hotspot) {
   if (hotspot.type === "surface_text") return hotspot.content || hotspot.label || "Texto";
   if (hotspot.style === "label") return hotspot.label || typeLabel[hotspot.type] || "Hotspot";
@@ -1012,6 +1087,8 @@ function getHotspotDisplayText(hotspot) {
 function getHotspotIconSvg(type) {
   const icons = {
     scene: `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8l18 45-18-12-18 12L32 8z"/></svg>`,
+    chevron: `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M21 10l22 22-22 22-7-7 15-15-15-15 7-7zm18 0l22 22-22 22-7-7 15-15-15-15 7-7z"/></svg>`,
+    dot: `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="16"/></svg>`,
     floor: `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6c-10 0-18 8-18 18 0 15 18 34 18 34s18-19 18-34C50 14 42 6 32 6zm0 24a7 7 0 1 1 0-14 7 7 0 0 1 0 14z"/><path d="M14 48h36l6 10H8l6-10z"/></svg>`,
     info: `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M29 25h8v26h-8V25zm0-12h8v8h-8v-8z"/></svg>`,
     video: `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M23 14l28 18-28 18V14z"/></svg>`,
@@ -1517,6 +1594,7 @@ function renderPublicExperience() {
       </div>
     </main>
   `;
+  document.documentElement.classList.add("public-route-ready");
 
   els.panorama = document.querySelector("#panorama");
   els.modal = document.querySelector("#modal");

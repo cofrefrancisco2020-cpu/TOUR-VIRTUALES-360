@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nadir Tours Studio</title>
+    <script>
+      (() => {
+        const params = new URLSearchParams(location.search);
+        if (params.has("tour") || params.has("embed") || params.has("preview")) {
+          document.documentElement.classList.add("public-route-loading");
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
     <link rel="stylesheet" href="./styles.css" />
