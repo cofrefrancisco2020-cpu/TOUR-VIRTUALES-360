@@ -90,6 +90,31 @@ Endpoint seguro local:
 http://127.0.0.1:4173/api/r2-presign
 ```
 
+Endpoint seguro en Vercel:
+
+```txt
+https://tour-virtuales-360.vercel.app/api/r2-presign
+```
+
+Si este endpoint responde `404`, Vercel no desplego la funcion serverless `api/r2-presign.js`.
+Solucion aplicada en local:
+
+- `pagina-web/api/r2-presign.js` ahora es autocontenido para Vercel.
+- `pagina-web/package.json` marca el proyecto como Node.
+- `pagina-web/vercel.json` declara la funcion `api/r2-presign.js`.
+
+En Vercel deben existir estas Environment Variables:
+
+```txt
+R2_ACCOUNT_ID
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET
+R2_PUBLIC_BASE_URL
+```
+
+Despues de agregarlas o cambiarlas, hacer redeploy.
+
 Estado probado:
 
 - `/api/r2-presign` responde `200`.

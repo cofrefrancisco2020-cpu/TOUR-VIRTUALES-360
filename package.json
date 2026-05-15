@@ -1,0 +1,11 @@
+{
+  "name": "perspective360-tour-platform",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node .server.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
