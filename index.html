@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nadir Tours Studio</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">N</div>
+          <div>
+            <strong>Nadir Tours</strong>
+            <span>Virtual tour studio</span>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <span>Tours</span>
+            <button id="newTourBtn" class="icon-button" title="Crear tour">+</button>
+          </div>
+          <div id="tourList" class="tour-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <span>Escenas</span>
+            <label class="file-button" title="Subir panorámica">
+              Subir
+              <input id="sceneUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+            </label>
+          </div>
+          <div id="sceneList" class="scene-list"></div>
+          <p class="hint">Acepta panorámicas 360 equirectangulares de Insta360 Studio, DJI y editores similares.</p>
+        </section>
+
+        <section class="panel brand-panel">
+          <div class="panel-heading">
+            <span>Marca</span>
+          </div>
+          <label>
+            Nombre visible
+            <input id="brandName" />
+          </label>
+          <label>
+            Logo
+            <input id="brandLogoUpload" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
+          </label>
+          <label>
+            URL del logo
+            <input id="brandLogoUrl" placeholder="https://..." />
+          </label>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <input id="tourTitle" class="title-input" aria-label="Nombre del tour" />
+            <div class="tour-meta">
+              <input id="tourSlug" aria-label="Slug del tour" />
+              <select id="tourAccess" aria-label="Acceso del tour">
+                <option value="public">Público</option>
+                <option value="password">Con contraseña</option>
+                <option value="draft">Borrador privado</option>
+              </select>
+              <input id="tourPassword" aria-label="Contraseña del tour" placeholder="Contraseña" />
+            </div>
+          </div>
+          <div class="top-actions">
+            <button id="saveBtn">Guardar</button>
+            <button id="shareBtn">Compartir</button>
+          </div>
+        </header>
+
+        <section class="viewer-band">
+          <div id="panorama"></div>
+          <div class="viewer-tools">
+            <button id="placeHotspotBtn">Colocar hotspot</button>
+            <button id="centerStartBtn">Guardar vista inicial</button>
+          </div>
+        </section>
+      </main>
+
+      <aside class="inspector">
+        <section class="panel">
+          <div class="panel-heading">
+            <span>Hotspots</span>
+            <button id="addCenterHotspotBtn" class="small-button">Centro</button>
+          </div>
+          <div id="hotspotList" class="hotspot-list"></div>
+        </section>
+
+        <section class="panel editor-panel">
+          <div class="panel-heading">
+            <span>Editor</span>
+            <button id="deleteHotspotBtn" class="ghost-button">Eliminar</button>
+          </div>
+          <label>
+            Tipo
+            <select id="hotspotType">
+              <option value="scene">Mover a escena</option>
+              <option value="floor">Mover desde el piso</option>
+              <option value="info">Información</option>
+              <option value="video">Video / reproductor</option>
+              <option value="drone">Dron / toma aÃ©rea</option>
+              <option value="image">Imagen deslizable</option>
+              <option value="object">Objeto 3D</option>
+              <option value="surface_text">Texto en superficie</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="lead">Pedir contacto</option>
+            </select>
+          </label>
+          <label>
+            Etiqueta
+            <input id="hotspotLabel" />
+          </label>
+          <label>
+            Escena destino
+            <select id="hotspotTarget"></select>
+          </label>
+          <label>
+            Contenido / URL / WhatsApp / Video
+            <textarea id="hotspotContent" rows="4"></textarea>
+          </label>
+          <label>
+            Color
+            <input id="hotspotColor" type="color" />
+          </label>
+          <label>
+            Estilo visual
+            <select id="hotspotStyle">
+              <option value="pin">Pin circular</option>
+              <option value="pulse">Pulso</option>
+              <option value="arrow">Flecha</option>
+              <option value="dot">Punto minimal</option>
+              <option value="label">Etiqueta</option>
+              <option value="ring">Anillo</option>
+              <option value="beacon">Baliza</option>
+              <option value="chevron">Chevron</option>
+              <option value="square">Cuadro</option>
+              <option value="glass">Cristal</option>
+            </select>
+          </label>
+          <label>
+            Transición
+            <select id="hotspotTransition">
+              <option value="push">Avance suave</option>
+              <option value="zoom">Zoom al hotspot</option>
+              <option value="crossfade">Crossfade</option>
+              <option value="fade">Fade</option>
+              <option value="blur">Blur cinemático</option>
+              <option value="none">Sin transición</option>
+            </select>
+          </label>
+          <div class="transform-grid">
+            <label>
+              Tamaño
+              <input id="hotspotSize" type="range" min="12" max="96" value="28" />
+            </label>
+            <label>
+              Rotación
+              <input id="hotspotRotate" type="range" min="-180" max="180" value="0" />
+            </label>
+            <label>
+              Perspectiva X
+              <input id="hotspotTiltX" type="range" min="-60" max="60" value="0" />
+            </label>
+            <label>
+              Perspectiva Y
+              <input id="hotspotTiltY" type="range" min="-60" max="60" value="0" />
+            </label>
+            <label>
+              Opacidad
+              <input id="hotspotOpacity" type="range" min="20" max="100" value="90" />
+            </label>
+          </div>
+        </section>
+
+        <section id="sharePanel" class="panel share-panel">
+          <div class="panel-heading">
+            <span>Publicación</span>
+          </div>
+          <label>
+            Link público
+            <input id="publicLink" readonly />
+          </label>
+          <label>
+            Iframe para cliente
+            <textarea id="iframeCode" rows="5" readonly></textarea>
+          </label>
+        </section>
+      </aside>
+    </div>
+
+    <div id="modal" class="modal" hidden>
+      <div class="modal-card">
+        <button id="closeModalBtn" class="modal-close">×</button>
+        <h2 id="modalTitle"></h2>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
