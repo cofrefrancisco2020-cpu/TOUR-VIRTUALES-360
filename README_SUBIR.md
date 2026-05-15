@@ -36,7 +36,28 @@ http://127.0.0.1:4173/?tour=casa-piloto-demo&embed=1
 2. Conectar el repositorio en Vercel.
 3. Vercel publicara la app como sitio estatico.
 
-Los datos, imagenes, tours y hotspots se guardan en Supabase. Vercel solo publica el codigo de la pagina.
+Los datos, tours y hotspots se guardan en Supabase. Los panoramas pesados pueden subirse automaticamente a Cloudflare R2 si las variables estan configuradas.
+
+## Cloudflare R2 para panoramas
+
+El editor intenta subir primero los panoramas y miniaturas a Cloudflare R2. Supabase queda solo para datos del tour.
+
+Variables necesarias en Vercel:
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+- `R2_PUBLIC_BASE_URL`
+
+Para probar local, copia `.env.local.example` como `.env.local` y rellena esos valores.
+
+En el bucket R2, habilita CORS para permitir `PUT` desde:
+
+- `http://127.0.0.1:4173`
+- tu dominio de Vercel
+
+Si R2 todavia no esta configurado, el editor usa Supabase Storage como respaldo temporal.
 
 ## Importante
 

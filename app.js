@@ -274,6 +274,7 @@ function normalizeScene(scene) {
   return {
     ...scene,
     panoramaMode,
+    assetSource: scene.assetSource || inferSceneAssetSource(scene),
     multiRes: {
       ...multiRes,
       enabled: panoramaMode === "multires" && Boolean(multiRes.basePath),
@@ -282,6 +283,15 @@ function normalizeScene(scene) {
       cubeResolution: Number(multiRes.cubeResolution) || 4096,
     },
   };
+}
+
+function inferSceneAssetSource(scene) {
+  if (scene.assetSource) return scene.assetSource;
+  if (scene.imagePath) return "supabase";
+  if (scene.r2Key) return "cloudflare";
+  if (scene.image?.startsWith("data:")) return "local";
+  if (scene.image?.startsWith("http")) return "external";
+  return "demo";
 }
 
 function normalizeStateShape(nextState) {
@@ -334,6 +344,12 @@ async function loadToursFromSupabase() {
           title: scene.title,
           image: scene.image_url,
           imagePath: scene.image_path,
+          thumbnailUrl: scene.thumbnail_url || "",
+          r2Key: scene.r2_key || "",
+          r2ThumbnailKey: scene.r2_thumbnail_key || "",
+          assetSource: scene.asset_source || "",
+          panoramaMode: scene.panorama_mode || "equirectangular",
+          multiRes: scene.multires || scene.multi_res || {},
           hfov: Number(scene.hfov),
           yaw: Number(scene.yaw),
           pitch: Number(scene.pitch),
@@ -412,6 +428,12 @@ async function loadPublicTourFromSupabase() {
           title: scene.title,
           image: scene.image_url,
           imagePath: scene.image_path,
+          thumbnailUrl: scene.thumbnail_url || "",
+          r2Key: scene.r2_key || "",
+          r2ThumbnailKey: scene.r2_thumbnail_key || "",
+          assetSource: scene.asset_source || "",
+          panoramaMode: scene.panorama_mode || "equirectangular",
+          multiRes: scene.multires || scene.multi_res || {},
           hfov: Number(scene.hfov),
           yaw: Number(scene.yaw),
           pitch: Number(scene.pitch),
@@ -463,17 +485,48 @@ async function persistActiveTour() {
 
   for (const [index, scene] of tour.scenes.entries()) {
     if (!isUuid(scene.id)) continue;
-    const { error: sceneError } = await db.from("scenes").upsert({
+    const scenePayload = {
       id: scene.id,
       tour_id: tour.id,
       title: scene.title,
       image_url: scene.image,
       image_path: scene.imagePath || null,
+      thumbnail_url: scene.thumbnailUrl || null,
+      r2_key: scene.r2Key || null,
+      r2_thumbnail_key: scene.r2ThumbnailKey || null,
+      asset_source: scene.assetSource || inferSceneAssetSource(scene),
+      panorama_mode: scene.panoramaMode || "equirectangular",
+      multires: scene.multiRes || null,
       sort_order: index,
       yaw: scene.yaw || 0,
       pitch: scene.pitch || 0,
       hfov: scene.hfov || 100,
-    });
+    };
+    let { error: sceneError } = await db.from("scenes").upsert(scenePayload);
+    if (sceneError && sceneError.message?.includes("thumbnail_url")) {
+      delete scenePayload.thumbnail_url;
+      ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
+    }
+    if (sceneError && sceneError.message?.includes("r2_key")) {
+      delete scenePayload.r2_key;
+      ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
+    }
+    if (sceneError && sceneError.message?.includes("r2_thumbnail_key")) {
+      delete scenePayload.r2_thumbnail_key;
+      ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
+    }
+    if (sceneError && sceneError.message?.includes("asset_source")) {
+      delete scenePayload.asset_source;
+      ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
+    }
+    if (sceneError && sceneError.message?.includes("panorama_mode")) {
+      delete scenePayload.panorama_mode;
+      ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
+    }
+    if (sceneError && sceneError.message?.includes("multires")) {
+      delete scenePayload.multires;
+      ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
+    }
     if (sceneError) throw sceneError;
 
     for (const hotspot of scene.hotspots) {
@@ -745,7 +798,8 @@ async function deleteTour(tourId) {
       showStatus(`No se pudo eliminar el tour: ${error.message}`, true);
       return;
     }
-    if (paths.length) await db.storage.from("panoramas").remove(paths);
+    const thumbPaths = tour.scenes.map((scene) => scene.thumbnailPath).filter(Boolean);
+    if (paths.length || thumbPaths.length) await db.storage.from("panoramas").remove([...paths, ...thumbPaths]);
   }
 
   state.tours = state.tours.filter((item) => item.id !== tourId);
@@ -771,7 +825,7 @@ function renderScenes() {
       <button class="drag-handle" title="Arrastrar escena" type="button">↕</button>
       <div class="scene-fields">
         <input class="scene-title-input" value="${escapeAttribute(scene.title)}" aria-label="Nombre de escena">
-        <span>${scene.hotspots.length} hotspots</span>
+        <span>${scene.hotspots.length} hotspots · ${sceneSourceLabel(scene)}</span>
       </div>
       <button class="scene-delete-button" title="Eliminar escena" type="button">×</button>
     `;
@@ -805,6 +859,16 @@ function renderScenes() {
   });
 }
 
+function sceneSourceLabel(scene) {
+  const source = inferSceneAssetSource(scene);
+  if (scene.panoramaMode === "multires") return "tiles";
+  if (source === "supabase") return "Supabase";
+  if (source === "cloudflare") return "Cloudflare";
+  if (source === "external") return "URL externa";
+  if (source === "local") return "local";
+  return "demo";
+}
+
 async function deleteScene(sceneId) {
   const tour = getActiveTour();
   if (tour.scenes.length <= 1) {
@@ -822,8 +886,9 @@ async function deleteScene(sceneId) {
       showStatus(`No se pudo eliminar la escena: ${error.message}`, true);
       return;
     }
-    if (scene.imagePath) {
-      await db.storage.from("panoramas").remove([scene.imagePath]);
+    const removablePaths = [scene.imagePath, scene.thumbnailPath].filter(Boolean);
+    if (removablePaths.length) {
+      await db.storage.from("panoramas").remove(removablePaths);
     }
   }
 
@@ -947,7 +1012,11 @@ function renderHotspotEditor() {
 function renderViewer() {
   const scene = normalizeScene(getActiveScene());
   const surface = getViewerSurface();
-  showViewerLoading(surface);
+  if (isEditorRoute()) {
+    showViewerLoading(surface);
+  } else {
+    hideViewerLoading(surface);
+  }
   if (viewer) {
     viewer.destroy();
     viewer = null;
@@ -967,7 +1036,7 @@ function renderViewer() {
 
   viewer.on("load", () => {
     hideViewerLoading(surface);
-    revealSceneQuality(surface);
+    if (isEditorRoute()) revealSceneQuality(surface);
     warmNearbyScenes(scene);
   });
 
@@ -1021,10 +1090,14 @@ async function transitionToScene(sceneId, shouldSave = false, origin = null) {
     holdCurrentScene(surface);
     await wait(180);
   }
-  await preloadSceneAssets(targetScene, 1200);
+  await preloadSceneAssets(targetScene, isPublicRoute() ? 20000 : 1200);
   if (token !== sceneTransitionToken) return;
   clearTransitionClasses(surface);
-  showViewerLoading(surface);
+  if (isEditorRoute()) {
+    showViewerLoading(surface);
+  } else {
+    hideViewerLoading(surface);
+  }
 
   activeSceneId = sceneId;
   activeHotspotId = null;
@@ -1048,6 +1121,10 @@ function getViewerSurface() {
 }
 
 function showViewerLoading(surface = getViewerSurface()) {
+  if (isPublicRoute()) {
+    hideViewerLoading(surface);
+    return;
+  }
   surface?.classList.add("viewer-is-loading");
   const loader = surface?.querySelector(".viewer-loader");
   if (loader) loader.hidden = false;
@@ -1100,7 +1177,7 @@ function warmNearbyScenes(scene = getActiveScene()) {
     .filter((hotspot) => isNavigationHotspot(hotspot) && hotspot.targetSceneId)
     .map((hotspot) => tour.scenes.find((item) => item.id === hotspot.targetSceneId))
     .filter(Boolean)
-    .slice(0, 3);
+    .slice(0, 1);
   targets.forEach((target) => preloadSceneInBackground(target));
 }
 
@@ -1176,8 +1253,9 @@ function createHotspotNode(node, hotspot) {
     visual.textContent = visualText;
   } else if (isNavigationHotspot(hotspot) && shouldShowTargetThumbnail(hotspot)) {
     const target = getHotspotTargetScene(hotspot);
-    visual.innerHTML = target
-      ? `<img class="hotspot-thumb" src="${escapeAttribute(target.image)}" alt="">`
+    const previewImage = getScenePreviewImage(target);
+    visual.innerHTML = previewImage
+      ? `<img class="hotspot-thumb" src="${escapeAttribute(previewImage)}" loading="lazy" alt="">`
       : getHotspotIconSvg(hotspot.type);
   } else {
     visual.innerHTML = getHotspotIconSvg(getStyleIconType(hotspot));
@@ -1240,8 +1318,13 @@ function getHotspotTargetScene(hotspot) {
   return getActiveTour().scenes.find((scene) => scene.id === hotspot.targetSceneId);
 }
 
+function getScenePreviewImage(scene) {
+  if (!scene) return "";
+  return scene.thumbnailUrl || scene.image || "";
+}
+
 function shouldShowTargetThumbnail(hotspot) {
-  return ["pin", "pulse", "beacon", "ring", "square", "glass"].includes(hotspot.style || "pin");
+  return ["pin", "pulse", "beacon", "ring", "square", "glass", "arrow", "chevron"].includes(hotspot.style || "pin");
 }
 
 function getStyleIconType(hotspot) {
@@ -1645,6 +1728,88 @@ function createTour() {
   render();
 }
 
+async function uploadPanoramaAssets({ tour, safeName, thumbName, panoramaFile, thumbnailFile }) {
+  const basePath = `${currentUser.id}/${tour.id}`;
+  const panoramaKey = `${basePath}/${safeName}`;
+  const thumbnailKey = `${basePath}/${thumbName}`;
+
+  try {
+    showStatus(`Subiendo a Cloudflare R2 (${formatBytes(panoramaFile.size)})...`);
+    const [panoramaUpload, thumbnailUpload] = await Promise.all([
+      uploadFileToR2(panoramaKey, panoramaFile),
+      uploadFileToR2(thumbnailKey, thumbnailFile),
+    ]);
+    return {
+      image: panoramaUpload.publicUrl,
+      thumbnailUrl: thumbnailUpload.publicUrl,
+      imagePath: "",
+      thumbnailPath: "",
+      r2Key: panoramaKey,
+      r2ThumbnailKey: thumbnailKey,
+      assetSource: "cloudflare",
+    };
+  } catch (error) {
+    console.warn("R2 upload failed, falling back to Supabase Storage.", error);
+    if (error?.statusCode === 501 || /Faltan variables R2|no esta configurado/i.test(error.message || "")) {
+      showStatus("Cloudflare R2 no esta configurado todavia. Subiendo a Supabase por ahora...");
+      return uploadPanoramaAssetsToSupabase({
+        path: panoramaKey,
+        thumbPath: thumbnailKey,
+        panoramaFile,
+        thumbnailFile,
+      });
+    }
+    throw new Error(`No se pudo subir a Cloudflare R2: ${error.message || error}`);
+  }
+}
+
+async function uploadFileToR2(key, file) {
+  const response = await fetch("/api/r2-presign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, contentType: file.type }),
+  });
+  const signed = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(signed.error || "No se pudo firmar R2.");
+    error.statusCode = response.status;
+    throw error;
+  }
+
+  const upload = await fetch(signed.uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+  if (!upload.ok) throw new Error(`R2 rechazo la subida (${upload.status}). Revisa CORS del bucket.`);
+  return signed;
+}
+
+async function uploadPanoramaAssetsToSupabase({ path, thumbPath, panoramaFile, thumbnailFile }) {
+  const { error: uploadError } = await db.storage.from("panoramas").upload(path, panoramaFile, {
+    contentType: panoramaFile.type,
+    upsert: true,
+  });
+  if (uploadError) throw uploadError;
+  const { error: thumbUploadError } = await db.storage.from("panoramas").upload(thumbPath, thumbnailFile, {
+    contentType: thumbnailFile.type,
+    upsert: true,
+  });
+  if (thumbUploadError) throw thumbUploadError;
+
+  const { data } = db.storage.from("panoramas").getPublicUrl(path);
+  const { data: thumbData } = db.storage.from("panoramas").getPublicUrl(thumbPath);
+  return {
+    image: data.publicUrl,
+    imagePath: path,
+    thumbnailUrl: thumbData.publicUrl,
+    thumbnailPath: thumbPath,
+    r2Key: "",
+    r2ThumbnailKey: "",
+    assetSource: "supabase",
+  };
+}
+
 async function handleSceneUpload(event) {
   const file = event.target.files?.[0];
   if (!file) return;
@@ -1653,22 +1818,30 @@ async function handleSceneUpload(event) {
     try {
       showStatus("Optimizando panorama...");
       const tour = getActiveTour();
-      const optimizedFile = await optimizePanoramaFile(file);
-      showStatus(`Subiendo panorama optimizado (${formatBytes(optimizedFile.size)})...`);
-      const safeName = `${Date.now()}-${slugify(file.name.replace(/\.[^.]+$/, ""))}.jpg`;
-      const path = `${currentUser.id}/${tour.id}/${safeName}`;
-      const { error: uploadError } = await db.storage.from("panoramas").upload(path, optimizedFile, {
-        contentType: "image/jpeg",
-        upsert: true,
+      const { panoramaFile, thumbnailFile } = await createPanoramaAssets(file);
+      const extension = panoramaFile.type === "image/webp" ? "webp" : "jpg";
+      const baseName = `${Date.now()}-${slugify(file.name.replace(/\.[^.]+$/, ""))}`;
+      const safeName = `${baseName}.${extension}`;
+      const thumbName = `${baseName}-thumb.webp`;
+      const uploadResult = await uploadPanoramaAssets({
+        tour,
+        safeName,
+        thumbName,
+        panoramaFile,
+        thumbnailFile,
       });
-      if (uploadError) throw uploadError;
-
-      const { data } = db.storage.from("panoramas").getPublicUrl(path);
       const scene = {
         id: crypto.randomUUID(),
         title: file.name.replace(/\.[^.]+$/, ""),
-        image: data.publicUrl,
-        imagePath: path,
+        image: uploadResult.image,
+        imagePath: uploadResult.imagePath,
+        thumbnailUrl: uploadResult.thumbnailUrl,
+        thumbnailPath: uploadResult.thumbnailPath,
+        r2Key: uploadResult.r2Key,
+        r2ThumbnailKey: uploadResult.r2ThumbnailKey,
+        panoramaMode: "equirectangular",
+        assetSource: uploadResult.assetSource,
+        multiRes: createDefaultMultiResConfig(),
         hfov: 100,
         yaw: 0,
         pitch: 0,
@@ -1680,19 +1853,28 @@ async function handleSceneUpload(event) {
       saveState();
       render();
       event.target.value = "";
-      showStatus("Panorama subido.");
+      showStatus(`Panorama subido a ${uploadResult.assetSource === "cloudflare" ? "Cloudflare R2" : "Supabase"}.`);
     } catch (error) {
       showStatus(`No se pudo subir: ${error.message}`, true);
     }
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = () => {
+  try {
+    showStatus("Optimizando panorama local...");
+    const { panoramaFile, thumbnailFile } = await createPanoramaAssets(file);
+    const [panoramaUrl, thumbnailUrl] = await Promise.all([
+      readFileAsDataUrl(panoramaFile),
+      readFileAsDataUrl(thumbnailFile),
+    ]);
     const scene = {
       id: crypto.randomUUID(),
       title: file.name.replace(/\.[^.]+$/, ""),
-      image: reader.result,
+      image: panoramaUrl,
+      thumbnailUrl,
+      panoramaMode: "equirectangular",
+      assetSource: "local",
+      multiRes: createDefaultMultiResConfig(),
       hfov: 100,
       yaw: 0,
       pitch: 0,
@@ -1705,25 +1887,50 @@ async function handleSceneUpload(event) {
     saveState();
     render();
     event.target.value = "";
-  };
-  reader.readAsDataURL(file);
+    showStatus(`Panorama optimizado (${formatBytes(panoramaFile.size)}).`);
+  } catch (error) {
+    showStatus(`No se pudo optimizar: ${error.message}`, true);
+  }
 }
 
-async function optimizePanoramaFile(file) {
+async function createPanoramaAssets(file) {
   const bitmap = await createImageBitmap(file);
   const sourceRatio = bitmap.width / bitmap.height;
-  const maxWidth = sourceRatio > 1.8 ? 4096 : 3000;
-  const width = Math.min(bitmap.width, maxWidth);
-  const height = Math.round(width / sourceRatio);
+  const panoramaFile = await renderImageFile(bitmap, file.name, {
+    maxWidth: sourceRatio > 1.8 ? 8192 : 5200,
+    type: "image/webp",
+    quality: 0.92,
+    suffix: "",
+  });
+  const thumbnailFile = await renderImageFile(bitmap, file.name, {
+    maxWidth: 1024,
+    type: "image/webp",
+    quality: 0.78,
+    suffix: "-thumb",
+  });
+  bitmap.close?.();
+  return { panoramaFile, thumbnailFile };
+}
+
+async function renderImageFile(bitmap, originalName, options) {
+  const sourceRatio = bitmap.width / bitmap.height;
+  const width = Math.min(bitmap.width, options.maxWidth);
+  const height = Math.max(1, Math.round(width / sourceRatio));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(bitmap, 0, 0, width, height);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
-  bitmap.close?.();
-  if (!blob) return file;
-  return new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" });
+  let blob = await new Promise((resolve) => canvas.toBlob(resolve, options.type, options.quality));
+  let type = options.type;
+  if (!blob) {
+    type = "image/jpeg";
+    blob = await new Promise((resolve) => canvas.toBlob(resolve, type, options.quality));
+  }
+  if (!blob) throw new Error("No se pudo optimizar la imagen.");
+  const extension = type === "image/webp" ? "webp" : "jpg";
+  const name = `${originalName.replace(/\.[^.]+$/, "")}${options.suffix}.${extension}`;
+  return new File([blob], name, { type });
 }
 
 function formatBytes(bytes) {
@@ -1839,10 +2046,14 @@ function renderPublicSceneNav() {
   container.innerHTML = "";
   tour.scenes.forEach((scene) => {
     const button = document.createElement("button");
+    const previewSrc = getScenePreviewImage(scene);
+    const previewImage = previewSrc
+      ? `<img src="${escapeAttribute(previewSrc)}" loading="lazy" alt="">`
+      : `<span class="scene-preview-placeholder"></span>`;
     button.innerHTML = `
       <span>${escapeHtml(scene.title)}</span>
       <span class="scene-preview">
-        <img src="${escapeAttribute(scene.image)}" alt="">
+        ${previewImage}
         <strong>${escapeHtml(scene.title)}</strong>
       </span>
     `;

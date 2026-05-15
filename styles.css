@@ -857,6 +857,13 @@ label {
   border-radius: 5px;
 }
 
+.custom-hotspot.style-arrow .hotspot-visual:has(.hotspot-thumb),
+.custom-hotspot.style-chevron .hotspot-visual:has(.hotspot-thumb) {
+  clip-path: none;
+  border: 2px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+}
+
 .custom-hotspot.style-dot .hotspot-visual {
   min-width: calc(var(--hotspot-size, 34px) * 0.52);
   min-height: calc(var(--hotspot-size, 34px) * 0.52);
@@ -903,6 +910,12 @@ label {
 
 .custom-hotspot.style-square .hotspot-thumb {
   border-radius: 6px;
+}
+
+.custom-hotspot.style-ring .hotspot-thumb,
+.custom-hotspot.style-arrow .hotspot-thumb,
+.custom-hotspot.style-chevron .hotspot-thumb {
+  border-radius: 999px;
 }
 
 .custom-hotspot.style-glass .hotspot-visual {
@@ -1219,6 +1232,16 @@ label {
   border-radius: 6px;
 }
 
+.scene-preview-placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.18), transparent 46%),
+    linear-gradient(135deg, rgba(31, 157, 138, 0.18), rgba(226, 180, 92, 0.12)),
+    #11161a;
+}
+
 .scene-preview strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1241,6 +1264,24 @@ label {
 .public-viewer {
   position: relative;
   overflow: hidden;
+}
+
+.public-viewer .viewer-loader,
+.public-viewer .pnlm-load-box,
+.public-viewer .pnlm-lbox,
+.public-viewer .pnlm-lbar,
+.public-viewer .pnlm-lbar-fill,
+.public-viewer .pnlm-lmsg,
+.public-viewer .pnlm-load-button,
+.public-viewer .pnlm-loading {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.public-viewer .pnlm-container,
+.public-viewer .pnlm-render-container {
+  background: #080a0c !important;
 }
 
 .public-gate {

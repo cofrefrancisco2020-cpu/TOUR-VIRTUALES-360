@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
@@ -38,13 +38,13 @@
         <section class="panel">
           <div class="panel-heading">
             <span>Escenas</span>
-            <label class="file-button" title="Subir panorámica">
+            <label class="file-button" title="Subir panorÃ¡mica">
               Subir
               <input id="sceneUpload" type="file" accept="image/jpeg,image/png,image/webp" />
             </label>
           </div>
           <div id="sceneList" class="scene-list"></div>
-          <p class="hint">Acepta panorámicas 360 equirectangulares de Insta360 Studio, DJI y editores similares.</p>
+          <p class="hint">Sube panoramas 360 equirectangulares. El editor optimiza y envia los archivos pesados a Cloudflare R2.</p>
         </section>
 
         <section class="panel brand-panel">
@@ -73,11 +73,11 @@
             <div class="tour-meta">
               <input id="tourSlug" aria-label="Slug del tour" />
               <select id="tourAccess" aria-label="Acceso del tour">
-                <option value="public">Público</option>
-                <option value="password">Con contraseña</option>
+                <option value="public">PÃºblico</option>
+                <option value="password">Con contraseÃ±a</option>
                 <option value="draft">Borrador privado</option>
               </select>
-              <input id="tourPassword" aria-label="Contraseña del tour" placeholder="Contraseña" />
+              <input id="tourPassword" aria-label="ContraseÃ±a del tour" placeholder="ContraseÃ±a" />
             </div>
             <div id="workflowGuide" class="workflow-guide" aria-label="Flujo de creacion del tour"></div>
           </div>
@@ -119,9 +119,9 @@
             <select id="hotspotType">
               <option value="scene">Mover a escena</option>
               <option value="floor">Mover desde el piso</option>
-              <option value="info">Información</option>
+              <option value="info">InformaciÃ³n</option>
               <option value="video">Video / reproductor</option>
-              <option value="drone">Dron / toma aÃ©rea</option>
+              <option value="drone">Dron / toma aÃƒÂ©rea</option>
               <option value="image">Imagen deslizable</option>
               <option value="object">Objeto 3D</option>
               <option value="surface_text">Texto en superficie</option>
@@ -161,23 +161,23 @@
             </select>
           </label>
           <label>
-            Transición
+            TransiciÃ³n
             <select id="hotspotTransition">
               <option value="push">Avance suave</option>
               <option value="zoom">Zoom al hotspot</option>
               <option value="crossfade">Crossfade</option>
               <option value="fade">Fade</option>
-              <option value="blur">Blur cinemático</option>
-              <option value="none">Sin transición</option>
+              <option value="blur">Blur cinemÃ¡tico</option>
+              <option value="none">Sin transiciÃ³n</option>
             </select>
           </label>
           <div class="transform-grid">
             <label>
-              Tamaño
+              TamaÃ±o
               <input id="hotspotSize" type="range" min="12" max="96" value="28" />
             </label>
             <label>
-              Rotación
+              RotaciÃ³n
               <input id="hotspotRotate" type="range" min="-180" max="180" value="0" />
             </label>
             <label>
@@ -233,10 +233,10 @@
 
         <section id="sharePanel" class="panel share-panel">
           <div class="panel-heading">
-            <span>Publicación</span>
+            <span>PublicaciÃ³n</span>
           </div>
           <label>
-            Link público
+            Link pÃºblico
             <input id="publicLink" readonly />
           </label>
           <label>
@@ -249,7 +249,7 @@
 
     <div id="modal" class="modal" hidden>
       <div class="modal-card">
-        <button id="closeModalBtn" class="modal-close">×</button>
+        <button id="closeModalBtn" class="modal-close">Ã—</button>
         <h2 id="modalTitle"></h2>
         <div id="modalBody"></div>
       </div>
