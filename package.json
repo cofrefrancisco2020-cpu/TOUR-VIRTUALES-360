@@ -6,6 +6,6 @@
     "start": "node .server.cjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   }
 }
