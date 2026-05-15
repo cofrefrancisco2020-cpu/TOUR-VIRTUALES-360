@@ -41,6 +41,8 @@ let activeHotspotId = null;
 let viewer = null;
 let placementMode = false;
 let movingHotspotId = null;
+const preloadedScenes = new Set();
+let sceneTransitionToken = 0;
 
 const els = {
   tourList: document.querySelector("#tourList"),
@@ -67,6 +69,14 @@ const els = {
   hotspotTiltX: document.querySelector("#hotspotTiltX"),
   hotspotTiltY: document.querySelector("#hotspotTiltY"),
   hotspotOpacity: document.querySelector("#hotspotOpacity"),
+  panoramaMode: document.querySelector("#panoramaMode"),
+  multiresBasePath: document.querySelector("#multiresBasePath"),
+  multiresExtension: document.querySelector("#multiresExtension"),
+  multiresTileResolution: document.querySelector("#multiresTileResolution"),
+  multiresMaxLevel: document.querySelector("#multiresMaxLevel"),
+  multiresCubeResolution: document.querySelector("#multiresCubeResolution"),
+  workflowGuide: document.querySelector("#workflowGuide"),
+  viewerLoader: document.querySelector("#viewerLoader"),
   transformGrid: document.querySelector(".transform-grid"),
   placeHotspotBtn: document.querySelector("#placeHotspotBtn"),
   addCenterHotspotBtn: document.querySelector("#addCenterHotspotBtn"),
@@ -91,7 +101,7 @@ async function start() {
     currentUser = data.user;
   }
 
-  if (route.has("embed") || route.has("preview")) {
+  if (isPublicRoute()) {
     await loadPublicTourFromSupabase();
     renderPublicExperience();
     return;
@@ -106,18 +116,26 @@ async function start() {
   renderConnectionPanel();
 }
 
+function isPublicRoute() {
+  return route.has("tour") || route.has("embed") || route.has("preview");
+}
+
+function isEditorRoute() {
+  return !isPublicRoute();
+}
+
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try {
-      return JSON.parse(saved);
+      return normalizeStateShape(JSON.parse(saved));
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
   }
 
   const image = createDemoPanorama();
-  return {
+  return normalizeStateShape({
     activeTourId: "tour-demo",
     tours: [
       {
@@ -201,7 +219,7 @@ function loadState() {
         ],
       },
     ],
-  };
+  });
 }
 
 function createEmptyRemoteState() {
@@ -234,6 +252,43 @@ function createEmptyRemoteState() {
       },
     ],
   };
+}
+
+function createDefaultMultiResConfig() {
+  return {
+    enabled: false,
+    basePath: "",
+    path: "/%l/%s%y_%x",
+    fallbackPath: "",
+    extension: "jpg",
+    tileResolution: 512,
+    maxLevel: 4,
+    cubeResolution: 4096,
+  };
+}
+
+function normalizeScene(scene) {
+  if (!scene) return null;
+  const multiRes = { ...createDefaultMultiResConfig(), ...(scene.multiRes || scene.multires || {}) };
+  const panoramaMode = scene.panoramaMode === "multires" || multiRes.enabled ? "multires" : "equirectangular";
+  return {
+    ...scene,
+    panoramaMode,
+    multiRes: {
+      ...multiRes,
+      enabled: panoramaMode === "multires" && Boolean(multiRes.basePath),
+      tileResolution: Number(multiRes.tileResolution) || 512,
+      maxLevel: Number(multiRes.maxLevel) || 4,
+      cubeResolution: Number(multiRes.cubeResolution) || 4096,
+    },
+  };
+}
+
+function normalizeStateShape(nextState) {
+  nextState.tours.forEach((tour) => {
+    tour.scenes = tour.scenes.map(normalizeScene);
+  });
+  return nextState;
 }
 
 async function loadToursFromSupabase() {
@@ -274,7 +329,7 @@ async function loadToursFromSupabase() {
       activeSceneId: scenes.find((scene) => scene.tour_id === tour.id)?.id,
       scenes: scenes
         .filter((scene) => scene.tour_id === tour.id)
-        .map((scene) => ({
+        .map((scene) => normalizeScene({
           id: scene.id,
           title: scene.title,
           image: scene.image_url,
@@ -352,7 +407,7 @@ async function loadPublicTourFromSupabase() {
         brandName: tour.brand_name || "Perspective360",
         brandLogoUrl: tour.brand_logo_url || "",
         activeSceneId: scenes[0]?.id,
-        scenes: scenes.map((scene) => ({
+        scenes: scenes.map((scene) => normalizeScene({
           id: scene.id,
           title: scene.title,
           image: scene.image_url,
@@ -520,6 +575,17 @@ function bindEvents() {
   ].forEach((input) => {
     input.addEventListener("input", syncHotspotFields);
   });
+
+  [
+    els.panoramaMode,
+    els.multiresBasePath,
+    els.multiresExtension,
+    els.multiresTileResolution,
+    els.multiresMaxLevel,
+    els.multiresCubeResolution,
+  ].forEach((input) => {
+    input?.addEventListener("input", syncSceneAdvancedFields);
+  });
 }
 
 function renderConnectionPanel() {
@@ -593,6 +659,8 @@ function render() {
   renderScenes();
   renderHotspots();
   renderHotspotEditor();
+  renderSceneAdvancedFields();
+  renderWorkflowGuide();
   updateShareFields();
   renderViewer();
 }
@@ -607,6 +675,36 @@ function renderTourFields() {
   els.brandName.value = tour.brandName || "Perspective360";
   els.brandLogoUrl.value = tour.brandLogoUrl || "";
   updateEditorBrand();
+}
+
+function renderWorkflowGuide() {
+  if (!els.workflowGuide) return;
+  const tour = getActiveTour();
+  const hasUploadedScene = tour.scenes.some((scene) => scene.image && !scene.image.startsWith("data:image/svg+xml"));
+  const hasHotspot = tour.scenes.some((scene) => scene.hotspots.length);
+  const hasConnection = tour.scenes.some((scene) => scene.hotspots.some((hotspot) => isNavigationHotspot(hotspot) && hotspot.targetSceneId));
+  const steps = [
+    ["Crear tour", Boolean(tour.title)],
+    ["Subir panoramas", hasUploadedScene || tour.scenes.length > 1],
+    ["Agregar hotspots", hasHotspot],
+    ["Conectar escenas", hasConnection],
+    ["Previsualizar", tour.access !== "draft"],
+    ["Publicar", tour.access === "public" || tour.access === "password"],
+  ];
+  els.workflowGuide.innerHTML = steps
+    .map(([label, done]) => `<span class="${done ? "done" : ""}">${done ? "OK" : "-"} ${escapeHtml(label)}</span>`)
+    .join("");
+}
+
+function renderSceneAdvancedFields() {
+  if (!els.panoramaMode) return;
+  const scene = normalizeScene(getActiveScene());
+  els.panoramaMode.value = scene.panoramaMode;
+  els.multiresBasePath.value = scene.multiRes.basePath || "";
+  els.multiresExtension.value = scene.multiRes.extension || "jpg";
+  els.multiresTileResolution.value = scene.multiRes.tileResolution || 512;
+  els.multiresMaxLevel.value = scene.multiRes.maxLevel || 4;
+  els.multiresCubeResolution.value = scene.multiRes.cubeResolution || 4096;
 }
 
 function renderTours() {
@@ -847,7 +945,9 @@ function renderHotspotEditor() {
 }
 
 function renderViewer() {
-  const scene = getActiveScene();
+  const scene = normalizeScene(getActiveScene());
+  const surface = getViewerSurface();
+  showViewerLoading(surface);
   if (viewer) {
     viewer.destroy();
     viewer = null;
@@ -855,8 +955,7 @@ function renderViewer() {
 
   els.panorama.innerHTML = "";
   viewer = pannellum.viewer("panorama", {
-    type: "equirectangular",
-    panorama: scene.image,
+    ...getPannellumSceneConfig(scene),
     autoLoad: true,
     showControls: true,
     compass: false,
@@ -866,7 +965,14 @@ function renderViewer() {
     hotSpots: scene.hotspots.map(toPannellumHotspot),
   });
 
+  viewer.on("load", () => {
+    hideViewerLoading(surface);
+    revealSceneQuality(surface);
+    warmNearbyScenes(scene);
+  });
+
   viewer.on("mouseup", (event) => {
+    if (!isEditorRoute()) return;
     const coords = viewer.mouseEventToCoords(event);
     if (movingHotspotId) {
       moveHotspotTo(movingHotspotId, coords[1], coords[0]);
@@ -879,36 +985,78 @@ function renderViewer() {
   });
 }
 
+function getPannellumSceneConfig(scene) {
+  const multiRes = scene.multiRes || createDefaultMultiResConfig();
+  // Future tile generators only need to fill multiRes.basePath and the tile numbers below.
+  // Normal panoramas keep working because equirectangular remains the default fallback.
+  if (scene.panoramaMode === "multires" && multiRes.enabled && multiRes.basePath) {
+    return {
+      type: "multires",
+      multiRes: {
+        basePath: multiRes.basePath,
+        path: multiRes.path || "/%l/%s%y_%x",
+        fallbackPath: multiRes.fallbackPath || undefined,
+        extension: multiRes.extension || "jpg",
+        tileResolution: Number(multiRes.tileResolution) || 512,
+        maxLevel: Number(multiRes.maxLevel) || 4,
+        cubeResolution: Number(multiRes.cubeResolution) || 4096,
+      },
+    };
+  }
+
+  return {
+    type: "equirectangular",
+    panorama: scene.image,
+  };
+}
+
 async function transitionToScene(sceneId, shouldSave = false, origin = null) {
   if (!sceneId || sceneId === activeSceneId) return;
-  const surface = document.querySelector(".viewer-band") || document.querySelector(".public-viewer");
-  const targetScene = getActiveTour().scenes.find((scene) => scene.id === sceneId);
+  const token = ++sceneTransitionToken;
+  const surface = getViewerSurface();
+  const targetScene = normalizeScene(getActiveTour().scenes.find((scene) => scene.id === sceneId));
   if (origin && viewer) {
     await animateHotspotTravel(origin);
   } else {
     holdCurrentScene(surface);
     await wait(180);
   }
-  await preloadSceneImage(targetScene?.image, 1200);
+  await preloadSceneAssets(targetScene, 1200);
+  if (token !== sceneTransitionToken) return;
   clearTransitionClasses(surface);
+  showViewerLoading(surface);
 
   activeSceneId = sceneId;
   activeHotspotId = null;
 
-  if (route.has("embed") || route.has("preview")) {
+  if (isPublicRoute()) {
     renderPublicSceneNav();
     renderViewer();
   } else {
     if (shouldSave) saveState();
     render();
   }
-
-  revealSceneQuality(surface);
 }
 
 function holdCurrentScene(surface) {
   if (!surface) return;
   surface.classList.add("transition-hold");
+}
+
+function getViewerSurface() {
+  return document.querySelector(".viewer-band") || document.querySelector(".public-viewer");
+}
+
+function showViewerLoading(surface = getViewerSurface()) {
+  surface?.classList.add("viewer-is-loading");
+  const loader = surface?.querySelector(".viewer-loader");
+  if (loader) loader.hidden = false;
+}
+
+function hideViewerLoading(surface = getViewerSurface()) {
+  surface?.classList.remove("viewer-is-loading");
+  const loader = surface?.querySelector(".viewer-loader");
+  if (loader) loader.hidden = true;
 }
 
 function revealSceneQuality(surface) {
@@ -938,6 +1086,28 @@ function preloadSceneImage(src, timeout = 700) {
     }),
     wait(timeout),
   ]);
+}
+
+function preloadSceneAssets(scene, timeout = 700) {
+  if (!scene) return Promise.resolve();
+  if (scene.panoramaMode === "multires") return Promise.resolve();
+  return preloadSceneImage(scene.image, timeout);
+}
+
+function warmNearbyScenes(scene = getActiveScene()) {
+  const tour = getActiveTour();
+  const targets = scene.hotspots
+    .filter((hotspot) => isNavigationHotspot(hotspot) && hotspot.targetSceneId)
+    .map((hotspot) => tour.scenes.find((item) => item.id === hotspot.targetSceneId))
+    .filter(Boolean)
+    .slice(0, 3);
+  targets.forEach((target) => preloadSceneInBackground(target));
+}
+
+function preloadSceneInBackground(scene) {
+  if (!scene || preloadedScenes.has(scene.id)) return;
+  preloadedScenes.add(scene.id);
+  preloadSceneAssets(normalizeScene(scene), 1800);
 }
 
 async function animateHotspotTravel(hotspot) {
@@ -1016,17 +1186,21 @@ function createHotspotNode(node, hotspot) {
   const preview = createHotspotPreview(hotspot);
   if (preview) {
     node.appendChild(preview);
-    node.addEventListener("mouseenter", () => node.classList.add("show-preview"));
-    node.addEventListener("mouseleave", () => node.classList.remove("show-preview"));
+  node.addEventListener("mouseenter", () => node.classList.add("show-preview"));
+  node.addEventListener("mouseleave", () => node.classList.remove("show-preview"));
+  node.addEventListener("pointerenter", () => {
+    if (!isNavigationHotspot(hotspot)) return;
+    preloadSceneInBackground(getHotspotTargetScene(hotspot));
+  });
   }
   node.title = hotspot.label;
   node.addEventListener("pointerdown", (event) => {
-    if (route.has("embed") || route.has("preview")) return;
+    if (!isEditorRoute()) return;
     if (event.target.closest(".hotspot-inline-tools")) return;
     startHotspotDrag(event, hotspot.id);
   });
 
-  if (!route.has("embed") && !route.has("preview") && hotspot.id === activeHotspotId) {
+  if (isEditorRoute() && hotspot.id === activeHotspotId) {
     const handles = document.createElement("span");
     handles.className = "hotspot-corners";
     handles.innerHTML = `<i></i><i></i><i></i><i></i>`;
@@ -1102,15 +1276,15 @@ function getHotspotIconSvg(type) {
 }
 
 function handleHotspotClick(_event, hotspot) {
-  activeHotspotId = hotspot.id;
-  if (!route.has("embed") && !route.has("preview")) {
-    renderHotspots();
-    renderHotspotEditor();
-    refreshHotspotMarkers();
+  if (!isEditorRoute()) {
+    runHotspotAction(hotspot);
     return;
   }
 
-  runHotspotAction(hotspot);
+  activeHotspotId = hotspot.id;
+  renderHotspots();
+  renderHotspotEditor();
+  refreshHotspotMarkers();
 }
 
 function runHotspotAction(hotspot) {
@@ -1183,12 +1357,14 @@ function extractYoutubeId(url) {
 }
 
 function startMoveHotspot(id) {
+  if (!isEditorRoute()) return;
   movingHotspotId = id;
   placementMode = false;
   els.placeHotspotBtn.textContent = "Haz clic en la nueva posición";
 }
 
 function startHotspotDrag(event, id) {
+  if (!isEditorRoute()) return;
   const hotspot = getActiveScene().hotspots.find((item) => item.id === id);
   if (!hotspot || !viewer) return;
   event.preventDefault();
@@ -1290,6 +1466,25 @@ function syncHotspotFields() {
   refreshHotspotMarker(hotspot);
 }
 
+function syncSceneAdvancedFields() {
+  const scene = getActiveScene();
+  if (!scene || !els.panoramaMode) return;
+  const mode = els.panoramaMode.value;
+  scene.panoramaMode = mode;
+  scene.multiRes = {
+    ...createDefaultMultiResConfig(),
+    ...(scene.multiRes || {}),
+    enabled: mode === "multires" && Boolean(els.multiresBasePath.value.trim()),
+    basePath: els.multiresBasePath.value.trim(),
+    extension: els.multiresExtension.value.trim() || "jpg",
+    tileResolution: Number(els.multiresTileResolution.value) || 512,
+    maxLevel: Number(els.multiresMaxLevel.value) || 4,
+    cubeResolution: Number(els.multiresCubeResolution.value) || 4096,
+  };
+  saveState();
+  renderViewer();
+}
+
 function updateHotspotFieldVisibility(hotspot) {
   const type = hotspot?.type || els.hotspotType.value;
   const isSurfaceText = type === "surface_text";
@@ -1353,6 +1548,7 @@ function syncTourFields() {
   els.tourSlug.value = tour.slug;
   els.tourPassword.style.display = tour.access === "password" ? "block" : "none";
   renderTours();
+  renderWorkflowGuide();
 }
 
 function syncBrandFields() {
@@ -1546,7 +1742,7 @@ function saveInitialView() {
 
 function updateShareFields() {
   const tour = getActiveTour();
-  const link = `${location.origin}${location.pathname}?tour=${encodeURIComponent(tour.slug)}&preview=1`;
+  const link = `${location.origin}${location.pathname}?tour=${encodeURIComponent(tour.slug)}`;
   const embedLink = `${location.origin}${location.pathname}?tour=${encodeURIComponent(tour.slug)}&embed=1`;
   els.publicLink.value = tour.access === "draft" ? "Tour en borrador privado" : link;
   els.iframeCode.value =
@@ -1584,6 +1780,10 @@ function renderPublicExperience() {
       </section>
       <section id="publicViewer" class="public-viewer">
         <div id="panorama"></div>
+        <div id="viewerLoader" class="viewer-loader" hidden>
+          <span></span>
+          <strong>Cargando panorama</strong>
+        </div>
       </section>
       <div id="modal" class="modal" hidden>
         <div class="modal-card">
@@ -1601,6 +1801,7 @@ function renderPublicExperience() {
   els.modalTitle = document.querySelector("#modalTitle");
   els.modalBody = document.querySelector("#modalBody");
   els.closeModalBtn = document.querySelector("#closeModalBtn");
+  els.viewerLoader = document.querySelector("#viewerLoader");
   els.closeModalBtn.addEventListener("click", closeModal);
 
   if (tour.access === "draft") {

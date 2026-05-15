@@ -79,6 +79,7 @@
               </select>
               <input id="tourPassword" aria-label="Contraseña del tour" placeholder="Contraseña" />
             </div>
+            <div id="workflowGuide" class="workflow-guide" aria-label="Flujo de creacion del tour"></div>
           </div>
           <div class="top-actions">
             <button id="saveBtn">Guardar</button>
@@ -88,6 +89,10 @@
 
         <section class="viewer-band">
           <div id="panorama"></div>
+          <div id="viewerLoader" class="viewer-loader" hidden>
+            <span></span>
+            <strong>Cargando panorama</strong>
+          </div>
           <div class="viewer-tools">
             <button id="placeHotspotBtn">Colocar hotspot</button>
             <button id="centerStartBtn">Guardar vista inicial</button>
@@ -188,6 +193,42 @@
               <input id="hotspotOpacity" type="range" min="20" max="100" value="90" />
             </label>
           </div>
+        </section>
+
+        <section class="panel scene-advanced-panel">
+          <details>
+            <summary>Panorama avanzado</summary>
+            <label>
+              Modo de carga
+              <select id="panoramaMode">
+                <option value="equirectangular">Panorama normal</option>
+                <option value="multires">Multiresolution / tiles</option>
+              </select>
+            </label>
+            <label>
+              Ruta base de tiles
+              <input id="multiresBasePath" placeholder="tiles/escena-1" />
+            </label>
+            <div class="advanced-grid">
+              <label>
+                Extension
+                <input id="multiresExtension" placeholder="jpg" />
+              </label>
+              <label>
+                Tile px
+                <input id="multiresTileResolution" type="number" min="256" step="128" />
+              </label>
+              <label>
+                Niveles
+                <input id="multiresMaxLevel" type="number" min="1" step="1" />
+              </label>
+              <label>
+                Cubo px
+                <input id="multiresCubeResolution" type="number" min="512" step="512" />
+              </label>
+            </div>
+            <p class="hint">Preparado para Pannellum multires. Mientras no existan tiles validos, el visor usa el panorama normal.</p>
+          </details>
         </section>
 
         <section id="sharePanel" class="panel share-panel">
