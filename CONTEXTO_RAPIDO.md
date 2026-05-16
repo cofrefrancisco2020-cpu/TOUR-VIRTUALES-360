@@ -27,3 +27,15 @@ Nota Vercel/R2:
 - Si devuelve `404`, Vercel no desplego la funcion API.
 - Se agrego `package.json`, se reforzo `api/r2-presign.js` y se declaro la funcion en `vercel.json`.
 - Vercel necesita las variables `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`.
+
+Pulido 2026-05-16:
+
+- Ruta publica limpia: `/tours/{slug}`.
+- Compatibilidad antigua: `?tour={slug}`.
+- Estilos visuales de hotspots diferenciados.
+- `Avance suave` más lento y fluido.
+- Ortografía visible corregida.
+- Multires preparado con botón `Leer config.json`.
+- Docs: `docs/MULTIRES_TILES.md`.
+- Wrapper local: `tools/generate-tiles.ps1`.
+- CORS R2 probado OK para Vercel.

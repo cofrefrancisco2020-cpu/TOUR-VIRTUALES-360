@@ -23,12 +23,13 @@ function getSigningKey(secret, dateStamp, region, service) {
 }
 
 function getR2Env() {
+  const clean = (value) => (typeof value === "string" ? value.trim() : value);
   const required = {
-    accountId: process.env.R2_ACCOUNT_ID,
-    accessKeyId: process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-    bucket: process.env.R2_BUCKET,
-    publicBaseUrl: process.env.R2_PUBLIC_BASE_URL,
+    accountId: clean(process.env.R2_ACCOUNT_ID),
+    accessKeyId: clean(process.env.R2_ACCESS_KEY_ID),
+    secretAccessKey: clean(process.env.R2_SECRET_ACCESS_KEY),
+    bucket: clean(process.env.R2_BUCKET),
+    publicBaseUrl: clean(process.env.R2_PUBLIC_BASE_URL),
   };
 
   const missing = Object.entries(required)

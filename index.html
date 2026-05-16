@@ -7,14 +7,15 @@
     <script>
       (() => {
         const params = new URLSearchParams(location.search);
-        if (params.has("tour") || params.has("embed") || params.has("preview")) {
+        const cleanPath = location.pathname.replace(/^\/+|\/+$/g, "");
+        if (params.has("tour") || params.has("embed") || params.has("preview") || cleanPath.startsWith("tours/")) {
           document.documentElement.classList.add("public-route-loading");
         }
       })();
     </script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="app-shell">
@@ -38,7 +39,7 @@
         <section class="panel">
           <div class="panel-heading">
             <span>Escenas</span>
-            <label class="file-button" title="Subir panorÃ¡mica">
+            <label class="file-button" title="Subir panorámica">
               Subir
               <input id="sceneUpload" type="file" accept="image/jpeg,image/png,image/webp" />
             </label>
@@ -73,13 +74,13 @@
             <div class="tour-meta">
               <input id="tourSlug" aria-label="Slug del tour" />
               <select id="tourAccess" aria-label="Acceso del tour">
-                <option value="public">PÃºblico</option>
-                <option value="password">Con contraseÃ±a</option>
+                <option value="public">Público</option>
+                <option value="password">Con contraseña</option>
                 <option value="draft">Borrador privado</option>
               </select>
-              <input id="tourPassword" aria-label="ContraseÃ±a del tour" placeholder="ContraseÃ±a" />
+              <input id="tourPassword" aria-label="Contraseña del tour" placeholder="Contraseña" />
             </div>
-            <div id="workflowGuide" class="workflow-guide" aria-label="Flujo de creacion del tour"></div>
+            <div id="workflowGuide" class="workflow-guide" aria-label="Flujo de creación del tour"></div>
           </div>
           <div class="top-actions">
             <button id="saveBtn">Guardar</button>
@@ -119,9 +120,9 @@
             <select id="hotspotType">
               <option value="scene">Mover a escena</option>
               <option value="floor">Mover desde el piso</option>
-              <option value="info">InformaciÃ³n</option>
+              <option value="info">Información</option>
               <option value="video">Video / reproductor</option>
-              <option value="drone">Dron / toma aÃƒÂ©rea</option>
+              <option value="drone">Dron / toma aérea</option>
               <option value="image">Imagen deslizable</option>
               <option value="object">Objeto 3D</option>
               <option value="surface_text">Texto en superficie</option>
@@ -161,23 +162,23 @@
             </select>
           </label>
           <label>
-            TransiciÃ³n
+            Transición
             <select id="hotspotTransition">
               <option value="push">Avance suave</option>
               <option value="zoom">Zoom al hotspot</option>
               <option value="crossfade">Crossfade</option>
               <option value="fade">Fade</option>
-              <option value="blur">Blur cinemÃ¡tico</option>
-              <option value="none">Sin transiciÃ³n</option>
+              <option value="blur">Blur cinemático</option>
+              <option value="none">Sin transición</option>
             </select>
           </label>
           <div class="transform-grid">
             <label>
-              TamaÃ±o
+              Tamaño
               <input id="hotspotSize" type="range" min="12" max="96" value="28" />
             </label>
             <label>
-              RotaciÃ³n
+              Rotación
               <input id="hotspotRotate" type="range" min="-180" max="180" value="0" />
             </label>
             <label>
@@ -206,37 +207,38 @@
               </select>
             </label>
             <label>
-              Ruta base de tiles
+              Carpeta o ruta base de tiles
               <input id="multiresBasePath" placeholder="tiles/escena-1" />
             </label>
+            <button id="multiresLoadConfigBtn" class="small-button" type="button">Leer config.json</button>
             <div class="advanced-grid">
               <label>
-                Extension
+                Extensión de archivos
                 <input id="multiresExtension" placeholder="jpg" />
               </label>
               <label>
-                Tile px
+                Tamaño de tile
                 <input id="multiresTileResolution" type="number" min="256" step="128" />
               </label>
               <label>
-                Niveles
+                Niveles de zoom
                 <input id="multiresMaxLevel" type="number" min="1" step="1" />
               </label>
               <label>
-                Cubo px
+                Resolución del cubo
                 <input id="multiresCubeResolution" type="number" min="512" step="512" />
               </label>
             </div>
-            <p class="hint">Preparado para Pannellum multires. Mientras no existan tiles validos, el visor usa el panorama normal.</p>
+            <p class="hint">Este modo permite cargar panoramas en alta resolución divididos en tiles. Cuando existan tiles válidos, el visor usará multiresolution; si faltan o fallan, usará el panorama normal como respaldo.</p>
           </details>
         </section>
 
         <section id="sharePanel" class="panel share-panel">
           <div class="panel-heading">
-            <span>PublicaciÃ³n</span>
+            <span>Publicación</span>
           </div>
           <label>
-            Link pÃºblico
+            Link público
             <input id="publicLink" readonly />
           </label>
           <label>
@@ -249,7 +251,7 @@
 
     <div id="modal" class="modal" hidden>
       <div class="modal-card">
-        <button id="closeModalBtn" class="modal-close">Ã—</button>
+        <button id="closeModalBtn" class="modal-close">×</button>
         <h2 id="modalTitle"></h2>
         <div id="modalBody"></div>
       </div>
@@ -257,7 +259,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./config.js"></script>
-    <script src="./app.js"></script>
+    <script src="/config.js"></script>
+    <script src="/app.js"></script>
   </body>
 </html>
+

@@ -75,6 +75,7 @@ const els = {
   multiresTileResolution: document.querySelector("#multiresTileResolution"),
   multiresMaxLevel: document.querySelector("#multiresMaxLevel"),
   multiresCubeResolution: document.querySelector("#multiresCubeResolution"),
+  multiresLoadConfigBtn: document.querySelector("#multiresLoadConfigBtn"),
   workflowGuide: document.querySelector("#workflowGuide"),
   viewerLoader: document.querySelector("#viewerLoader"),
   transformGrid: document.querySelector(".transform-grid"),
@@ -117,11 +118,23 @@ async function start() {
 }
 
 function isPublicRoute() {
-  return route.has("tour") || route.has("embed") || route.has("preview");
+  return Boolean(getRouteTourSlug()) || route.has("embed") || route.has("preview");
 }
 
 function isEditorRoute() {
   return !isPublicRoute();
+}
+
+function getRouteTourSlug() {
+  if (route.has("tour")) return route.get("tour");
+  const parts = location.pathname.split("/").filter(Boolean);
+  if (parts[0] === "tours" && parts[1]) return decodeURIComponent(parts[1]);
+  return "";
+}
+
+function createPublicTourUrl(tour, options = {}) {
+  const base = `${location.origin}/tours/${encodeURIComponent(tour.slug)}`;
+  return options.embed ? `${base}?embed=1` : base;
 }
 
 function loadState() {
@@ -397,7 +410,7 @@ async function loadToursFromSupabase() {
 
 async function loadPublicTourFromSupabase() {
   if (!db) return;
-  const slug = route.get("tour");
+  const slug = getRouteTourSlug();
   if (!slug) return;
 
   const { data: tour, error: tourError } = await db.from("tours").select("*").eq("slug", slug).single();
@@ -606,8 +619,8 @@ function bindEvents() {
   els.closeModalBtn.addEventListener("click", closeModal);
 
   [els.tourTitle, els.tourSlug, els.tourAccess, els.tourPassword].forEach((input) => {
-    input.addEventListener("input", () => {
-      syncTourFields();
+    input.addEventListener("input", (event) => {
+      syncTourFields({ preserveSlug: event.target !== els.tourTitle });
       updateShareFields();
     });
   });
@@ -639,6 +652,7 @@ function bindEvents() {
   ].forEach((input) => {
     input?.addEventListener("input", syncSceneAdvancedFields);
   });
+  els.multiresLoadConfigBtn?.addEventListener("click", loadMultiresConfigFromInput);
 }
 
 function renderConnectionPanel() {
@@ -1194,8 +1208,10 @@ async function animateHotspotTravel(hotspot) {
   surface?.classList.add(`transition-${transition}`);
 
   if (transition === "push" || transition === "zoom") {
-    viewer.lookAt(hotspot.pitch, hotspot.yaw, Math.max(38, viewer.getHfov() * 0.48), 820);
-    await wait(620);
+    const targetHfov = transition === "push" ? Math.max(42, viewer.getHfov() * 0.58) : Math.max(38, viewer.getHfov() * 0.48);
+    const duration = transition === "push" ? 1180 : 860;
+    viewer.lookAt(hotspot.pitch, hotspot.yaw, targetHfov, duration);
+    await wait(transition === "push" ? 940 : 640);
   } else if (transition === "blur") {
     viewer.lookAt(hotspot.pitch, hotspot.yaw, Math.max(52, viewer.getHfov() * 0.7), 520);
     await wait(420);
@@ -1251,6 +1267,8 @@ function createHotspotNode(node, hotspot) {
   visual.className = "hotspot-visual";
   if (hotspot.type === "surface_text" || hotspot.style === "label") {
     visual.textContent = visualText;
+  } else if (hotspot.style === "chevron") {
+    visual.innerHTML = getHotspotIconSvg("chevron");
   } else if (isNavigationHotspot(hotspot) && shouldShowTargetThumbnail(hotspot)) {
     const target = getHotspotTargetScene(hotspot);
     const previewImage = getScenePreviewImage(target);
@@ -1324,7 +1342,7 @@ function getScenePreviewImage(scene) {
 }
 
 function shouldShowTargetThumbnail(hotspot) {
-  return ["pin", "pulse", "beacon", "ring", "square", "glass", "arrow", "chevron"].includes(hotspot.style || "pin");
+  return ["pin", "ring", "square", "glass"].includes(hotspot.style || "pin");
 }
 
 function getStyleIconType(hotspot) {
@@ -1553,19 +1571,72 @@ function syncSceneAdvancedFields() {
   const scene = getActiveScene();
   if (!scene || !els.panoramaMode) return;
   const mode = els.panoramaMode.value;
+  const basePath = els.multiresBasePath.value.trim();
+  const extension = els.multiresExtension.value.trim();
+  const tileResolution = Number(els.multiresTileResolution.value);
+  const maxLevel = Number(els.multiresMaxLevel.value);
+  const cubeResolution = Number(els.multiresCubeResolution.value);
+  if (mode === "multires" && !isCompleteMultiResInput({ basePath, extension, tileResolution, maxLevel, cubeResolution })) {
+    showStatus("Completa la configuración de tiles antes de activar multiresolution.", true);
+    renderSceneAdvancedFields();
+    return;
+  }
   scene.panoramaMode = mode;
   scene.multiRes = {
     ...createDefaultMultiResConfig(),
     ...(scene.multiRes || {}),
-    enabled: mode === "multires" && Boolean(els.multiresBasePath.value.trim()),
-    basePath: els.multiresBasePath.value.trim(),
-    extension: els.multiresExtension.value.trim() || "jpg",
-    tileResolution: Number(els.multiresTileResolution.value) || 512,
-    maxLevel: Number(els.multiresMaxLevel.value) || 4,
-    cubeResolution: Number(els.multiresCubeResolution.value) || 4096,
+    enabled: mode === "multires" && Boolean(basePath),
+    basePath,
+    extension: extension || "jpg",
+    tileResolution: tileResolution || 512,
+    maxLevel: maxLevel || 4,
+    cubeResolution: cubeResolution || 4096,
   };
   saveState();
   renderViewer();
+}
+
+function isCompleteMultiResInput({ basePath, extension, tileResolution, maxLevel, cubeResolution }) {
+  return Boolean(basePath && extension && tileResolution > 0 && maxLevel > 0 && cubeResolution > 0);
+}
+
+async function loadMultiresConfigFromInput() {
+  const scene = getActiveScene();
+  const basePath = els.multiresBasePath.value.trim().replace(/\/+$/, "");
+  if (!scene || !basePath) {
+    showStatus("Indica primero la carpeta base de tiles.", true);
+    return;
+  }
+
+  try {
+    const response = await fetch(`${basePath}/config.json`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`config.json no disponible (${response.status})`);
+    const config = await response.json();
+    const parsed = parsePannellumMultiResConfig(config, basePath);
+    scene.panoramaMode = "multires";
+    scene.multiRes = parsed;
+    saveState();
+    renderSceneAdvancedFields();
+    renderViewer();
+    showStatus("Configuración multiresolution cargada desde config.json.");
+  } catch (error) {
+    showStatus(`No se pudo leer config.json. Se mantiene el panorama normal como respaldo. ${error.message}`, true);
+  }
+}
+
+function parsePannellumMultiResConfig(config, basePath) {
+  const multiRes = config.multiRes || config.multires || config;
+  return {
+    ...createDefaultMultiResConfig(),
+    enabled: true,
+    basePath: multiRes.basePath || basePath,
+    path: multiRes.path || "/%l/%s%y_%x",
+    fallbackPath: multiRes.fallbackPath || "",
+    extension: multiRes.extension || "jpg",
+    tileResolution: Number(multiRes.tileResolution) || 512,
+    maxLevel: Number(multiRes.maxLevel) || 4,
+    cubeResolution: Number(multiRes.cubeResolution) || 4096,
+  };
 }
 
 function updateHotspotFieldVisibility(hotspot) {
@@ -1622,10 +1693,11 @@ async function deleteActiveHotspot() {
   render();
 }
 
-function syncTourFields() {
+function syncTourFields(options = {}) {
+  const { preserveSlug = true } = options;
   const tour = getActiveTour();
   tour.title = els.tourTitle.value || "Tour sin nombre";
-  tour.slug = slugify(els.tourSlug.value || tour.title);
+  tour.slug = preserveSlug && els.tourSlug.value.trim() ? slugify(els.tourSlug.value) : slugify(tour.title);
   tour.access = els.tourAccess.value;
   tour.password = els.tourPassword.value;
   els.tourSlug.value = tour.slug;
@@ -1751,7 +1823,7 @@ async function uploadPanoramaAssets({ tour, safeName, thumbName, panoramaFile, t
   } catch (error) {
     console.warn("R2 upload failed, falling back to Supabase Storage.", error);
     if (error?.statusCode === 501 || /Faltan variables R2|no esta configurado/i.test(error.message || "")) {
-      showStatus("Cloudflare R2 no esta configurado todavia. Subiendo a Supabase por ahora...");
+      showStatus("Cloudflare R2 no está configurado todavía. Subiendo a Supabase por ahora...");
       return uploadPanoramaAssetsToSupabase({
         path: panoramaKey,
         thumbPath: thumbnailKey,
@@ -1949,8 +2021,8 @@ function saveInitialView() {
 
 function updateShareFields() {
   const tour = getActiveTour();
-  const link = `${location.origin}${location.pathname}?tour=${encodeURIComponent(tour.slug)}`;
-  const embedLink = `${location.origin}${location.pathname}?tour=${encodeURIComponent(tour.slug)}&embed=1`;
+  const link = createPublicTourUrl(tour);
+  const embedLink = createPublicTourUrl(tour, { embed: true });
   els.publicLink.value = tour.access === "draft" ? "Tour en borrador privado" : link;
   els.iframeCode.value =
     tour.access === "draft"
@@ -1959,7 +2031,7 @@ function updateShareFields() {
 }
 
 function renderPublicExperience() {
-  const slug = route.get("tour");
+  const slug = getRouteTourSlug();
   const tour = state.tours.find((item) => item.slug === slug) || state.tours[0];
   activeTourId = tour.id;
   activeSceneId = tour.activeSceneId || tour.scenes[0].id;
