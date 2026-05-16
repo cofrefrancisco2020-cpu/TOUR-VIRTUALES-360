@@ -84,7 +84,20 @@ Ese script crea las carpetas en `tiles/` y deja un reporte con las rutas locales
 tiles/_rutas-multires.txt
 ```
 
-## Subir tiles a Cloudflare R2
+## Subir tiles a Cloudflare R2 desde el editor
+
+El flujo mas comodo para trabajar online en Vercel es:
+
+1. Genera los tiles en tu PC con `generate-tiles.ps1` o `generate-tiles-batch.ps1`.
+2. Abre el editor online y selecciona la escena correspondiente.
+3. En `Panorama avanzado`, pulsa `Subir carpeta de tiles`.
+4. Selecciona la carpeta final de esa escena, por ejemplo `street-view`, que debe contener `config.json`.
+5. El navegador sube todos los archivos de esa carpeta a Cloudflare R2 usando `/api/r2-presign`.
+6. La app lee el `config.json`, completa la configuracion multires y guarda en Supabase solo la URL base y los datos tecnicos.
+
+Los archivos pesados quedan en Cloudflare R2. Vercel solo firma las subidas y Supabase solo guarda la metadata del tour.
+
+## Subir tiles a Cloudflare R2 con script
 
 Los tiles son muchos archivos y no conviene guardarlos en Vercel/GitHub cuando el tour crece. El flujo recomendado es:
 
