@@ -210,7 +210,13 @@
               Carpeta o ruta base de tiles
               <input id="multiresBasePath" placeholder="tiles/escena-1" />
             </label>
-            <button id="multiresLoadConfigBtn" class="small-button" type="button">Leer config.json</button>
+            <div class="multires-actions">
+              <label class="file-button multires-folder-button" title="Subir una carpeta generada de tiles a Cloudflare R2">
+                Subir carpeta de tiles
+                <input id="multiresFolderUpload" type="file" webkitdirectory directory multiple />
+              </label>
+              <button id="multiresLoadConfigBtn" class="small-button" type="button">Leer config.json</button>
+            </div>
             <div class="advanced-grid">
               <label>
                 Extensión de archivos

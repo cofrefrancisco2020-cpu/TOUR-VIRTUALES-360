@@ -76,6 +76,7 @@ const els = {
   multiresMaxLevel: document.querySelector("#multiresMaxLevel"),
   multiresCubeResolution: document.querySelector("#multiresCubeResolution"),
   multiresLoadConfigBtn: document.querySelector("#multiresLoadConfigBtn"),
+  multiresFolderUpload: document.querySelector("#multiresFolderUpload"),
   workflowGuide: document.querySelector("#workflowGuide"),
   viewerLoader: document.querySelector("#viewerLoader"),
   transformGrid: document.querySelector(".transform-grid"),
@@ -653,6 +654,7 @@ function bindEvents() {
     input?.addEventListener("input", syncSceneAdvancedFields);
   });
   els.multiresLoadConfigBtn?.addEventListener("click", loadMultiresConfigFromInput);
+  els.multiresFolderUpload?.addEventListener("change", handleMultiresFolderUpload);
 }
 
 function renderConnectionPanel() {
@@ -1624,6 +1626,103 @@ async function loadMultiresConfigFromInput() {
   }
 }
 
+async function handleMultiresFolderUpload(event) {
+  const input = event.target;
+  const scene = getActiveScene();
+  const tour = getActiveTour();
+  const selectedFiles = Array.from(input.files || []);
+
+  try {
+    if (!scene || !tour) {
+      showStatus("Selecciona primero una escena para asociar los tiles.", true);
+      return;
+    }
+    if (!selectedFiles.length) return;
+
+    const rootFolders = new Set(selectedFiles.map(getTileRootFolder).filter(Boolean));
+    if (rootFolders.size !== 1) {
+      showStatus("Selecciona una sola carpeta de tiles por escena.", true);
+      return;
+    }
+
+    const rootFolder = Array.from(rootFolders)[0];
+    const tileFiles = selectedFiles
+      .map((file) => ({ file, relativePath: getTileRelativePath(file, rootFolder) }))
+      .filter(({ relativePath }) => isSafeTileRelativePath(relativePath));
+    const configEntry = tileFiles.find(({ relativePath }) => relativePath.toLowerCase() === "config.json");
+
+    if (!configEntry) {
+      showStatus("Esa carpeta no contiene config.json. Selecciona la carpeta final de una escena, por ejemplo street-view.", true);
+      return;
+    }
+
+    const config = JSON.parse(await configEntry.file.text());
+    const tourSlug = slugify(tour.slug || tour.title || "tour");
+    const folderSlug = slugify(rootFolder || scene.title || "escena");
+    const keyPrefix = `tiles/${tourSlug}/${folderSlug}`;
+    let uploaded = 0;
+    let configPublicUrl = "";
+
+    showStatus(`Subiendo carpeta de tiles a Cloudflare R2 (0/${tileFiles.length})...`);
+    await uploadWithConcurrency(
+      tileFiles,
+      async ({ file, relativePath }) => {
+        const key = `${keyPrefix}/${relativePath}`;
+        const signed = await uploadFileToR2(key, file);
+        uploaded += 1;
+        if (relativePath.toLowerCase() === "config.json") {
+          configPublicUrl = signed.publicUrl;
+        }
+        if (uploaded === tileFiles.length || uploaded % 20 === 0) {
+          showStatus(`Subiendo carpeta de tiles a Cloudflare R2 (${uploaded}/${tileFiles.length})...`);
+        }
+      },
+      6,
+    );
+
+    const basePath = (configPublicUrl || `${window.location.origin}/${keyPrefix}`).replace(/\/config\.json$/i, "");
+    const parsed = parsePannellumMultiResConfig(config, basePath);
+    scene.panoramaMode = "multires";
+    scene.multiRes = parsed;
+    saveState();
+    renderSceneAdvancedFields();
+    renderViewer();
+    showStatus(`Tiles subidos a Cloudflare R2 y multiresolution activado (${tileFiles.length} archivos).`);
+  } catch (error) {
+    showStatus(`No se pudo subir la carpeta de tiles: ${error.message || error}`, true);
+  } finally {
+    input.value = "";
+  }
+}
+
+function getTileRootFolder(file) {
+  const relativePath = file.webkitRelativePath || file.name || "";
+  return relativePath.split("/").filter(Boolean)[0] || "";
+}
+
+function getTileRelativePath(file, rootFolder) {
+  const relativePath = (file.webkitRelativePath || file.name || "").replaceAll("\\", "/");
+  const parts = relativePath.split("/").filter(Boolean);
+  if (parts[0] === rootFolder) parts.shift();
+  return parts.join("/");
+}
+
+function isSafeTileRelativePath(relativePath) {
+  return Boolean(relativePath && !relativePath.split("/").some((part) => part === ".." || part === ""));
+}
+
+async function uploadWithConcurrency(items, worker, concurrency = 6) {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (index < items.length) {
+      const currentIndex = index;
+      index += 1;
+      await worker(items[currentIndex], currentIndex);
+    }
+  });
+  await Promise.all(workers);
+}
+
 function parsePannellumMultiResConfig(config, basePath) {
   const multiRes = config.multiRes || config.multires || config;
   return {
@@ -1836,10 +1935,11 @@ async function uploadPanoramaAssets({ tour, safeName, thumbName, panoramaFile, t
 }
 
 async function uploadFileToR2(key, file) {
+  const contentType = getFileContentType(file);
   const response = await fetch("/api/r2-presign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, contentType: file.type }),
+    body: JSON.stringify({ key, contentType }),
   });
   const signed = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1850,11 +1950,21 @@ async function uploadFileToR2(key, file) {
 
   const upload = await fetch(signed.uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": file.type },
+    headers: { "Content-Type": contentType },
     body: file,
   });
   if (!upload.ok) throw new Error(`R2 rechazo la subida (${upload.status}). Revisa CORS del bucket.`);
   return signed;
+}
+
+function getFileContentType(file) {
+  if (file.type) return file.type;
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".json")) return "application/json";
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
 }
 
 async function uploadPanoramaAssetsToSupabase({ path, thumbPath, panoramaFile, thumbnailFile }) {

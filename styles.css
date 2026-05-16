@@ -193,6 +193,18 @@ label {
   gap: 8px;
 }
 
+.multires-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.multires-actions .small-button,
+.multires-folder-button {
+  flex: 1 1 140px;
+}
+
 .icon-button {
   width: 34px;
   min-height: 34px;
