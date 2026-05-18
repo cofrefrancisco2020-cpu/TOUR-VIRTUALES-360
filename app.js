@@ -51,6 +51,8 @@ let placementMode = false;
 let movingHotspotId = null;
 const preloadedScenes = new Set();
 let sceneTransitionToken = 0;
+let publicEntrySceneId = null;
+let publicLittlePlanetPlayed = false;
 
 const els = {
   tourList: document.querySelector("#tourList"),
@@ -1096,6 +1098,10 @@ function renderHotspotEditor() {
 function renderViewer() {
   const scene = normalizeScene(getActiveScene());
   const surface = getViewerSurface();
+  const shouldPlayLittlePlanet = shouldRunPublicLittlePlanet(scene);
+  const initialView = shouldPlayLittlePlanet
+    ? { hfov: 168, yaw: scene.yaw || 0, pitch: -88 }
+    : { hfov: scene.hfov || 100, yaw: scene.yaw || 0, pitch: scene.pitch || 0 };
   if (isEditorRoute()) {
     showViewerLoading(surface);
   } else {
@@ -1112,9 +1118,12 @@ function renderViewer() {
     autoLoad: true,
     showControls: true,
     compass: false,
-    hfov: scene.hfov || 100,
-    yaw: scene.yaw || 0,
-    pitch: scene.pitch || 0,
+    minHfov: 35,
+    maxHfov: 170,
+    hfov: initialView.hfov,
+    yaw: initialView.yaw,
+    pitch: initialView.pitch,
+    fisheye: shouldPlayLittlePlanet ? 1.5 : 0,
     hotSpots: scene.hotspots.map(toPannellumHotspot),
   });
 
@@ -1122,6 +1131,7 @@ function renderViewer() {
     hideViewerLoading(surface);
     if (isEditorRoute()) revealSceneQuality(surface);
     warmNearbyScenes(scene);
+    if (shouldPlayLittlePlanet) playPublicLittlePlanetIntro(scene);
   });
 
   viewer.on("mouseup", (event) => {
@@ -1161,6 +1171,28 @@ function getPannellumSceneConfig(scene) {
     type: "equirectangular",
     panorama: scene.image || scene.thumbnailUrl || createDemoPanorama(),
   };
+}
+
+function shouldRunPublicLittlePlanet(scene) {
+  return Boolean(
+    isPublicRoute() &&
+      !route.has("embed") &&
+      !publicLittlePlanetPlayed &&
+      publicEntrySceneId &&
+      scene?.id === publicEntrySceneId
+  );
+}
+
+function playPublicLittlePlanetIntro(scene) {
+  if (!viewer) return;
+  publicLittlePlanetPlayed = true;
+  const finalPitch = Number.isFinite(scene.pitch) ? scene.pitch : 0;
+  const finalYaw = Number.isFinite(scene.yaw) ? scene.yaw : 0;
+  const finalHfov = Number.isFinite(scene.hfov) ? scene.hfov : 100;
+  wait(240).then(() => {
+    if (!viewer) return;
+    viewer.lookAt(finalPitch, finalYaw, finalHfov, 2800);
+  });
 }
 
 async function transitionToScene(sceneId, shouldSave = false, origin = null) {
@@ -2379,6 +2411,8 @@ function renderPublicExperience() {
   tour.intro = normalizeIntroConfig(tour.intro || {});
   activeTourId = tour.id;
   activeSceneId = tour.activeSceneId || tour.scenes[0].id;
+  publicEntrySceneId = activeSceneId;
+  publicLittlePlanetPlayed = false;
   const shouldShowIntro = tour.intro.enabled && Boolean(tour.intro.coverUrl || tour.intro.backgroundUrl) && !route.has("embed");
   const introBackground = getIntroBackground(tour);
 
