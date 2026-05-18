@@ -1,7 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { handleR2Presign } = require('./r2-presign.cjs');
+const { handleR2Presign, handleR2Delete } = require('./r2-presign.cjs');
 const root = process.cwd();
 const envPath = path.join(root, '.env.local');
 if (fs.existsSync(envPath)) {
@@ -16,6 +16,10 @@ const server = http.createServer((req,res)=>{
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/r2-presign') {
     handleR2Presign(req, res);
+    return;
+  }
+  if (url.pathname === '/api/r2-delete') {
+    handleR2Delete(req, res);
     return;
   }
   let filePath = path.join(root, decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));

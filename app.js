@@ -1,4 +1,5 @@
 const STORAGE_KEY = "nadir-tours-prototype";
+const RELEASE_NORMAL_AFTER_TILES_KEY = "nadir-release-normal-after-tiles";
 const supabaseConfig = window.NADIR_SUPABASE || {};
 const hasSupabaseConfig =
   supabaseConfig.url &&
@@ -33,6 +34,13 @@ const typeLabel = {
   lead: "Contacto",
 };
 
+const defaultIntroConfig = {
+  enabled: false,
+  coverUrl: "",
+  coverR2Key: "",
+  backgroundUrl: "",
+};
+
 let state = loadState();
 const route = new URLSearchParams(location.search);
 let activeTourId = state.activeTourId || state.tours[0].id;
@@ -57,6 +65,9 @@ const els = {
   brandName: document.querySelector("#brandName"),
   brandLogoUpload: document.querySelector("#brandLogoUpload"),
   brandLogoUrl: document.querySelector("#brandLogoUrl"),
+  introEnabled: document.querySelector("#introEnabled"),
+  introCoverUpload: document.querySelector("#introCoverUpload"),
+  introCoverPreview: document.querySelector("#introCoverPreview"),
   hotspotType: document.querySelector("#hotspotType"),
   hotspotLabel: document.querySelector("#hotspotLabel"),
   hotspotTarget: document.querySelector("#hotspotTarget"),
@@ -77,6 +88,8 @@ const els = {
   multiresCubeResolution: document.querySelector("#multiresCubeResolution"),
   multiresLoadConfigBtn: document.querySelector("#multiresLoadConfigBtn"),
   multiresFolderUpload: document.querySelector("#multiresFolderUpload"),
+  releaseNormalAfterTiles: document.querySelector("#releaseNormalAfterTiles"),
+  releaseNormalPanoramaBtn: document.querySelector("#releaseNormalPanoramaBtn"),
   workflowGuide: document.querySelector("#workflowGuide"),
   viewerLoader: document.querySelector("#viewerLoader"),
   transformGrid: document.querySelector(".transform-grid"),
@@ -138,6 +151,18 @@ function createPublicTourUrl(tour, options = {}) {
   return options.embed ? `${base}?embed=1` : base;
 }
 
+function normalizeIntroConfig(intro = {}) {
+  const coverUrl = intro.coverUrl || intro.cover_url || intro.backgroundUrl || intro.background_url || "";
+  return {
+    ...defaultIntroConfig,
+    ...intro,
+    enabled: Boolean(intro.enabled),
+    coverUrl,
+    coverR2Key: intro.coverR2Key || intro.cover_r2_key || intro.r2Key || intro.r2_key || "",
+    backgroundUrl: coverUrl,
+  };
+}
+
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
@@ -160,6 +185,10 @@ function loadState() {
         password: "",
         brandName: "Nadir Tours",
         brandLogoUrl: "",
+        intro: {
+          ...defaultIntroConfig,
+          enabled: false,
+        },
         activeSceneId: "scene-living",
         scenes: [
           {
@@ -250,6 +279,7 @@ function createEmptyRemoteState() {
         password: "",
         brandName: "Perspective360",
         brandLogoUrl: "",
+        intro: normalizeIntroConfig(),
         activeSceneId: sceneId,
         scenes: [
           {
@@ -310,6 +340,7 @@ function inferSceneAssetSource(scene) {
 
 function normalizeStateShape(nextState) {
   nextState.tours.forEach((tour) => {
+    tour.intro = normalizeIntroConfig(tour.intro || tour.intro_config || {});
     tour.scenes = tour.scenes.map(normalizeScene);
   });
   return nextState;
@@ -350,6 +381,7 @@ async function loadToursFromSupabase() {
       password: tour.password_hash || "",
       brandName: tour.brand_name || "Perspective360",
       brandLogoUrl: tour.brand_logo_url || "",
+      intro: normalizeIntroConfig(tour.intro_config || {}),
       activeSceneId: scenes.find((scene) => scene.tour_id === tour.id)?.id,
       scenes: scenes
         .filter((scene) => scene.tour_id === tour.id)
@@ -436,6 +468,7 @@ async function loadPublicTourFromSupabase() {
         password: tour.password_hash || "",
         brandName: tour.brand_name || "Perspective360",
         brandLogoUrl: tour.brand_logo_url || "",
+        intro: normalizeIntroConfig(tour.intro_config || {}),
         activeSceneId: scenes[0]?.id,
         scenes: scenes.map((scene) => normalizeScene({
           id: scene.id,
@@ -489,10 +522,15 @@ async function persistActiveTour() {
     password_hash: tour.password || null,
     brand_name: tour.brandName || "Perspective360",
     brand_logo_url: tour.brandLogoUrl || null,
+    intro_config: normalizeIntroConfig(tour.intro || {}),
   };
   let { error: tourError } = await db.from("tours").upsert(tourPayload);
   if (tourError && tourError.message?.includes("brand_logo_url")) {
     delete tourPayload.brand_logo_url;
+    ({ error: tourError } = await db.from("tours").upsert(tourPayload));
+  }
+  if (tourError && tourError.message?.includes("intro_config")) {
+    delete tourPayload.intro_config;
     ({ error: tourError } = await db.from("tours").upsert(tourPayload));
   }
   if (tourError) throw tourError;
@@ -503,7 +541,7 @@ async function persistActiveTour() {
       id: scene.id,
       tour_id: tour.id,
       title: scene.title,
-      image_url: scene.image,
+      image_url: getPersistableSceneImage(scene),
       image_path: scene.imagePath || null,
       thumbnail_url: scene.thumbnailUrl || null,
       r2_key: scene.r2Key || null,
@@ -517,6 +555,10 @@ async function persistActiveTour() {
       hfov: scene.hfov || 100,
     };
     let { error: sceneError } = await db.from("scenes").upsert(scenePayload);
+    if (sceneError && sceneError.message?.includes("image_url") && scenePayload.image_url === null) {
+      scenePayload.image_url = getLegacySceneImageFallback(scene);
+      ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
+    }
     if (sceneError && sceneError.message?.includes("thumbnail_url")) {
       delete scenePayload.thumbnail_url;
       ({ error: sceneError } = await db.from("scenes").upsert(scenePayload));
@@ -610,6 +652,8 @@ function bindEvents() {
   els.brandLogoUpload.addEventListener("change", handleLogoUpload);
   els.brandName.addEventListener("input", syncBrandFields);
   els.brandLogoUrl.addEventListener("input", syncBrandFields);
+  els.introEnabled?.addEventListener("change", syncIntroFields);
+  els.introCoverUpload?.addEventListener("change", handleIntroCoverUpload);
   els.placeHotspotBtn.addEventListener("click", () => {
     placementMode = !placementMode;
     els.placeHotspotBtn.textContent = placementMode ? "Haz clic en el panorama" : "Colocar hotspot";
@@ -655,6 +699,10 @@ function bindEvents() {
   });
   els.multiresLoadConfigBtn?.addEventListener("click", loadMultiresConfigFromInput);
   els.multiresFolderUpload?.addEventListener("change", handleMultiresFolderUpload);
+  els.releaseNormalAfterTiles?.addEventListener("change", () => {
+    localStorage.setItem(RELEASE_NORMAL_AFTER_TILES_KEY, els.releaseNormalAfterTiles.checked ? "true" : "false");
+  });
+  els.releaseNormalPanoramaBtn?.addEventListener("click", releaseNormalPanoramaFromActiveScene);
 }
 
 function renderConnectionPanel() {
@@ -743,7 +791,21 @@ function renderTourFields() {
   els.tourPassword.style.display = tour.access === "password" ? "block" : "none";
   els.brandName.value = tour.brandName || "Perspective360";
   els.brandLogoUrl.value = tour.brandLogoUrl || "";
+  renderIntroFields();
   updateEditorBrand();
+}
+
+function renderIntroFields() {
+  if (!els.introEnabled) return;
+  const tour = getActiveTour();
+  const intro = normalizeIntroConfig(tour.intro || {});
+  tour.intro = intro;
+  els.introEnabled.checked = intro.enabled;
+  if (els.introCoverPreview) {
+    const cover = intro.coverUrl || intro.backgroundUrl;
+    els.introCoverPreview.hidden = !cover;
+    els.introCoverPreview.innerHTML = cover ? `<img src="${escapeAttribute(cover)}" alt="Portada del tour">` : "";
+  }
 }
 
 function renderWorkflowGuide() {
@@ -774,6 +836,12 @@ function renderSceneAdvancedFields() {
   els.multiresTileResolution.value = scene.multiRes.tileResolution || 512;
   els.multiresMaxLevel.value = scene.multiRes.maxLevel || 4;
   els.multiresCubeResolution.value = scene.multiRes.cubeResolution || 4096;
+  if (els.releaseNormalAfterTiles) {
+    els.releaseNormalAfterTiles.checked = localStorage.getItem(RELEASE_NORMAL_AFTER_TILES_KEY) !== "false";
+  }
+  if (els.releaseNormalPanoramaBtn) {
+    els.releaseNormalPanoramaBtn.disabled = !hasNormalPanorama(scene) || scene.panoramaMode !== "multires";
+  }
 }
 
 function renderTours() {
@@ -1091,7 +1159,7 @@ function getPannellumSceneConfig(scene) {
 
   return {
     type: "equirectangular",
-    panorama: scene.image,
+    panorama: scene.image || scene.thumbnailUrl || createDemoPanorama(),
   };
 }
 
@@ -1660,34 +1728,53 @@ async function handleMultiresFolderUpload(event) {
     const tourSlug = slugify(tour.slug || tour.title || "tour");
     const folderSlug = slugify(rootFolder || scene.title || "escena");
     const keyPrefix = `tiles/${tourSlug}/${folderSlug}`;
+    const uploadItems = tileFiles.map(({ file, relativePath }) => ({
+      file,
+      relativePath,
+      key: `${keyPrefix}/${relativePath}`,
+    }));
     let uploaded = 0;
-    let configPublicUrl = "";
+    let uploadedBytes = 0;
+    const totalBytes = uploadItems.reduce((sum, item) => sum + item.file.size, 0);
 
-    showStatus(`Subiendo carpeta de tiles a Cloudflare R2 (0/${tileFiles.length})...`);
+    showStatus(`Preparando subida rápida a Cloudflare R2 (${tileFiles.length} archivos)...`);
+    const signedByKey = await presignR2Uploads(uploadItems);
+    const configPublicUrl = signedByKey.get(`${keyPrefix}/config.json`)?.publicUrl || "";
+
+    showStatus(`Subiendo carpeta de tiles a Cloudflare R2 (0/${uploadItems.length})...`);
     await uploadWithConcurrency(
-      tileFiles,
-      async ({ file, relativePath }) => {
-        const key = `${keyPrefix}/${relativePath}`;
-        const signed = await uploadFileToR2(key, file);
+      uploadItems,
+      async ({ file, key }) => {
+        const signed = signedByKey.get(key);
+        if (!signed) throw new Error(`No se pudo preparar la subida de ${key}.`);
+        await uploadSignedFileToR2(signed, file);
         uploaded += 1;
-        if (relativePath.toLowerCase() === "config.json") {
-          configPublicUrl = signed.publicUrl;
-        }
+        uploadedBytes += file.size;
         if (uploaded === tileFiles.length || uploaded % 20 === 0) {
-          showStatus(`Subiendo carpeta de tiles a Cloudflare R2 (${uploaded}/${tileFiles.length})...`);
+          showStatus(`Subiendo carpeta de tiles a Cloudflare R2 (${uploaded}/${uploadItems.length}, ${formatBytes(uploadedBytes)} de ${formatBytes(totalBytes)})...`);
         }
       },
-      6,
+      12,
     );
 
     const basePath = (configPublicUrl || `${window.location.origin}/${keyPrefix}`).replace(/\/config\.json$/i, "");
     const parsed = parsePannellumMultiResConfig(config, basePath);
     scene.panoramaMode = "multires";
     scene.multiRes = parsed;
+    let releaseText = "";
+    if (els.releaseNormalAfterTiles?.checked && hasNormalPanorama(scene)) {
+      try {
+        await releaseNormalPanorama(scene, { skipSave: true });
+        releaseText = " Panorama normal liberado.";
+      } catch (releaseError) {
+        releaseText = ` No se pudo liberar el panorama normal: ${releaseError.message || releaseError}`;
+      }
+    }
     saveState();
     renderSceneAdvancedFields();
+    renderScenes();
     renderViewer();
-    showStatus(`Tiles subidos a Cloudflare R2 y multiresolution activado (${tileFiles.length} archivos).`);
+    showStatus(`Tiles subidos a Cloudflare R2 y multiresolution activado (${tileFiles.length} archivos).${releaseText}`);
   } catch (error) {
     showStatus(`No se pudo subir la carpeta de tiles: ${error.message || error}`, true);
   } finally {
@@ -1709,6 +1796,26 @@ function getTileRelativePath(file, rootFolder) {
 
 function isSafeTileRelativePath(relativePath) {
   return Boolean(relativePath && !relativePath.split("/").some((part) => part === ".." || part === ""));
+}
+
+async function presignR2Uploads(items, chunkSize = 100) {
+  const signedByKey = new Map();
+  for (let index = 0; index < items.length; index += chunkSize) {
+    const chunk = items.slice(index, index + chunkSize);
+    const response = await fetch("/api/r2-presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keys: chunk.map((item) => item.key) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.error || "No se pudo firmar la subida R2 por lote.");
+      error.statusCode = response.status;
+      throw error;
+    }
+    (payload.uploads || []).forEach((signed) => signedByKey.set(signed.key, signed));
+  }
+  return signedByKey;
 }
 
 async function uploadWithConcurrency(items, worker, concurrency = 6) {
@@ -1736,6 +1843,76 @@ function parsePannellumMultiResConfig(config, basePath) {
     maxLevel: Number(multiRes.maxLevel) || 4,
     cubeResolution: Number(multiRes.cubeResolution) || 4096,
   };
+}
+
+function hasNormalPanorama(scene) {
+  return Boolean(scene?.r2Key || scene?.imagePath);
+}
+
+function getPersistableSceneImage(scene) {
+  if (scene.panoramaMode === "multires" && !hasNormalPanorama(scene)) return null;
+  return scene.image || getLegacySceneImageFallback(scene);
+}
+
+function getLegacySceneImageFallback(scene) {
+  return scene.thumbnailUrl || scene.multiRes?.basePath || createDemoPanorama();
+}
+
+async function releaseNormalPanoramaFromActiveScene() {
+  const scene = getActiveScene();
+  if (!scene || scene.panoramaMode !== "multires") {
+    showStatus("Activa primero multiresolution para esta escena.", true);
+    return;
+  }
+  try {
+    const released = await releaseNormalPanorama(scene);
+    if (!released) {
+      showStatus("Esta escena no tiene un panorama normal pesado para liberar.");
+      return;
+    }
+    saveState();
+    renderScenes();
+    renderSceneAdvancedFields();
+    renderViewer();
+    showStatus("Panorama normal liberado. La escena queda usando los tiles multiresolution.");
+  } catch (error) {
+    showStatus(`No se pudo liberar el panorama normal: ${error.message || error}`, true);
+  }
+}
+
+async function releaseNormalPanorama(scene, options = {}) {
+  if (!hasNormalPanorama(scene)) return false;
+
+  if (scene.r2Key) {
+    await deleteR2File(scene.r2Key);
+  }
+  if (scene.imagePath && db && currentUser) {
+    const { error } = await db.storage.from("panoramas").remove([scene.imagePath]);
+    if (error) throw error;
+  }
+
+  scene.image = "";
+  scene.imagePath = "";
+  scene.r2Key = "";
+  scene.assetSource = scene.panoramaMode === "multires" ? "tiles" : "";
+
+  if (!options.skipSave) saveState();
+  return true;
+}
+
+async function deleteR2File(key) {
+  const response = await fetch("/api/r2-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || "No se pudo eliminar el archivo de Cloudflare R2.");
+    error.statusCode = response.status;
+    throw error;
+  }
+  return payload;
 }
 
 function updateHotspotFieldVisibility(hotspot) {
@@ -1801,8 +1978,19 @@ function syncTourFields(options = {}) {
   tour.password = els.tourPassword.value;
   els.tourSlug.value = tour.slug;
   els.tourPassword.style.display = tour.access === "password" ? "block" : "none";
+  renderIntroFields();
   renderTours();
   renderWorkflowGuide();
+}
+
+function syncIntroFields() {
+  const tour = getActiveTour();
+  const currentIntro = normalizeIntroConfig(tour.intro || {});
+  tour.intro = normalizeIntroConfig({
+    ...currentIntro,
+    enabled: Boolean(els.introEnabled?.checked),
+  });
+  saveState();
 }
 
 function syncBrandFields() {
@@ -1858,6 +2046,46 @@ async function handleLogoUpload(event) {
   }
 }
 
+async function handleIntroCoverUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const tour = getActiveTour();
+    const intro = normalizeIntroConfig(tour.intro || {});
+    showStatus("Subiendo portada a Cloudflare R2...");
+
+    if (db && currentUser) {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const safeName = slugify(file.name.replace(/\.[^.]+$/, "")) || "portada";
+      const key = `${currentUser.id}/${tour.id}/intro/cover-${Date.now()}-${safeName}.${extension}`;
+      const upload = await uploadFileToR2(key, file);
+      if (intro.coverR2Key && intro.coverR2Key !== key) {
+        deleteR2File(intro.coverR2Key).catch((error) => console.warn("No se pudo borrar portada anterior", error));
+      }
+      tour.intro = normalizeIntroConfig({
+        ...intro,
+        coverUrl: `${upload.publicUrl}?v=${Date.now()}`,
+        coverR2Key: key,
+      });
+    } else {
+      tour.intro = normalizeIntroConfig({
+        ...intro,
+        coverUrl: await readFileAsDataUrl(file),
+        coverR2Key: "",
+      });
+    }
+
+    renderIntroFields();
+    saveState();
+    showStatus("Portada del tour actualizada.");
+  } catch (error) {
+    showStatus(`No se pudo subir la portada: ${error.message}`, true);
+  } finally {
+    event.target.value = "";
+  }
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1879,6 +2107,7 @@ function createTour() {
     password: "",
     brandName: "Perspective360",
     brandLogoUrl: "",
+    intro: normalizeIntroConfig(),
     activeSceneId: sceneId,
     scenes: [
       {
@@ -1935,11 +2164,10 @@ async function uploadPanoramaAssets({ tour, safeName, thumbName, panoramaFile, t
 }
 
 async function uploadFileToR2(key, file) {
-  const contentType = getFileContentType(file);
   const response = await fetch("/api/r2-presign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, contentType }),
+    body: JSON.stringify({ key }),
   });
   const signed = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -1948,13 +2176,18 @@ async function uploadFileToR2(key, file) {
     throw error;
   }
 
+  await uploadSignedFileToR2(signed, file);
+  return signed;
+}
+
+async function uploadSignedFileToR2(signed, file) {
+  const contentType = getFileContentType(file);
   const upload = await fetch(signed.uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": contentType },
     body: file,
   });
   if (!upload.ok) throw new Error(`R2 rechazo la subida (${upload.status}). Revisa CORS del bucket.`);
-  return signed;
 }
 
 function getFileContentType(file) {
@@ -2143,8 +2376,11 @@ function updateShareFields() {
 function renderPublicExperience() {
   const slug = getRouteTourSlug();
   const tour = state.tours.find((item) => item.slug === slug) || state.tours[0];
+  tour.intro = normalizeIntroConfig(tour.intro || {});
   activeTourId = tour.id;
   activeSceneId = tour.activeSceneId || tour.scenes[0].id;
+  const shouldShowIntro = tour.intro.enabled && Boolean(tour.intro.coverUrl || tour.intro.backgroundUrl) && !route.has("embed");
+  const introBackground = getIntroBackground(tour);
 
   document.body.innerHTML = `
     <main class="public-shell ${route.has("embed") ? "embedded" : ""}">
@@ -2174,6 +2410,11 @@ function renderPublicExperience() {
           <strong>Cargando panorama</strong>
         </div>
       </section>
+      ${shouldShowIntro ? `
+        <section id="tourIntro" class="tour-intro" style="--intro-bg: url('${escapeAttribute(introBackground)}')">
+          <button id="introEnterBtn" class="tour-intro__enter" type="button" aria-label="Entrar al tour"></button>
+        </section>
+      ` : ""}
       <div id="modal" class="modal" hidden>
         <div class="modal-card">
           <button id="closeModalBtn" class="modal-close">×</button>
@@ -2194,6 +2435,7 @@ function renderPublicExperience() {
   els.closeModalBtn.addEventListener("click", closeModal);
 
   if (tour.access === "draft") {
+    document.querySelector("#tourIntro")?.remove();
     document.querySelector("#publicViewer").innerHTML = `<div class="public-empty"><h1>Tour no publicado</h1><p>Este tour todavía está en borrador privado.</p></div>`;
     return;
   }
@@ -2201,16 +2443,17 @@ function renderPublicExperience() {
   const authKey = `tour-auth-${tour.id}`;
   if (tour.access === "password" && sessionStorage.getItem(authKey) !== "ok") {
     const gate = document.querySelector("#publicGate");
+    const intro = document.querySelector("#tourIntro");
     gate.hidden = false;
+    if (intro) intro.hidden = true;
     document.querySelector("#publicViewer").hidden = true;
     document.querySelector("#gateButton").addEventListener("click", () => {
       const value = document.querySelector("#gatePassword").value;
       if (value === tour.password) {
         sessionStorage.setItem(authKey, "ok");
         gate.hidden = true;
-        document.querySelector("#publicViewer").hidden = false;
-        renderPublicSceneNav();
-        renderViewer();
+        if (intro) intro.hidden = false;
+        startPublicViewer(shouldShowIntro);
       } else {
         document.querySelector("#gateError").textContent = "Contraseña incorrecta.";
       }
@@ -2218,8 +2461,33 @@ function renderPublicExperience() {
     return;
   }
 
+  startPublicViewer(shouldShowIntro);
+}
+
+function startPublicViewer(shouldShowIntro) {
+  const viewerEl = document.querySelector("#publicViewer");
+  const intro = document.querySelector("#tourIntro");
+  if (shouldShowIntro && intro) {
+    viewerEl.hidden = true;
+    intro?.querySelector("#introEnterBtn")?.addEventListener("click", () => {
+      intro.classList.add("is-leaving");
+      viewerEl.hidden = false;
+      renderPublicSceneNav();
+      renderViewer();
+      setTimeout(() => intro.remove(), 820);
+    }, { once: true });
+    return;
+  }
+  viewerEl.hidden = false;
   renderPublicSceneNav();
   renderViewer();
+}
+
+function getIntroBackground(tour) {
+  const intro = normalizeIntroConfig(tour.intro || {});
+  if (intro.coverUrl || intro.backgroundUrl) return intro.coverUrl || intro.backgroundUrl;
+  const scene = tour.scenes.find((item) => item.id === tour.activeSceneId) || tour.scenes[0];
+  return getScenePreviewImage(scene) || scene?.image || createDemoPanorama();
 }
 
 function renderPublicSceneNav() {

@@ -65,6 +65,22 @@
             <input id="brandLogoUrl" placeholder="https://..." />
           </label>
         </section>
+
+        <section class="panel intro-panel">
+          <div class="panel-heading">
+            <span>Entrada del tour</span>
+          </div>
+          <label class="checkbox-row">
+            <input id="introEnabled" type="checkbox" />
+            Mostrar portada antes de entrar
+          </label>
+          <label>
+            Imagen de portada
+            <input id="introCoverUpload" type="file" accept="image/png,image/jpeg,image/webp" />
+          </label>
+          <div id="introCoverPreview" class="intro-cover-preview" hidden></div>
+          <p class="hint">La portada se sube a Cloudflare R2 y se muestra completa antes de iniciar el tour.</p>
+        </section>
       </aside>
 
       <main class="workspace">
@@ -217,6 +233,11 @@
               </label>
               <button id="multiresLoadConfigBtn" class="small-button" type="button">Leer config.json</button>
             </div>
+            <label class="checkbox-row">
+              <input id="releaseNormalAfterTiles" type="checkbox" checked />
+              Liberar panorama normal al activar tiles
+            </label>
+            <button id="releaseNormalPanoramaBtn" class="small-button" type="button">Liberar panorama normal ahora</button>
             <div class="advanced-grid">
               <label>
                 Extensión de archivos
