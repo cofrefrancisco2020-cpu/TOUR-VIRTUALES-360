@@ -97,6 +97,10 @@ El flujo mas comodo para trabajar online en Vercel es:
 
 Los archivos pesados quedan en Cloudflare R2. Vercel solo firma las subidas y Supabase solo guarda la metadata del tour.
 
+Para acelerar la subida desde el editor, la app firma los tiles por lotes y luego los sube con varias conexiones paralelas. Esto no comprime ni modifica las imagenes; solo reduce el tiempo perdido entre archivo y archivo.
+
+Si activas `Liberar panorama normal al activar tiles`, cuando la carpeta multires queda subida correctamente la app elimina el panorama normal pesado de esa escena y mantiene el thumbnail pequeño para el listado. Esto ahorra almacenamiento en R2/Supabase cuando ya sabes que esa escena funcionara siempre con multiresolution.
+
 ## Subir tiles a Cloudflare R2 con script
 
 Los tiles son muchos archivos y no conviene guardarlos en Vercel/GitHub cuando el tour crece. El flujo recomendado es:
